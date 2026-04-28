@@ -1,5 +1,5 @@
 /* ============================================
-   MEDIA TRACKER — PORTFOLIO COLOR SCHEME
+   MEDIA TRACKER — COMPLETE STYLESHEET
    ============================================ */
 
 * {
@@ -417,6 +417,7 @@ body {
     display: flex;
     gap: 0.5rem;
     margin-bottom: 1.5rem;
+    flex-wrap: wrap;
 }
 
 .toggle-btn {
