@@ -1,1 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Manga - Anime Tracker</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">Anime Tracker</div>
+        <div class="nav-links">
+            <a href="index.html">Home</a>
+            <a href="anime.html">My Anime</a>
+            <a href="manga.html" class="active">My Manga</a>
+            <a href="browse.html">Browse</a>
+        </div>
+    </nav>
 
+    <main class="container">
+        <div class="page-header">
+            <h1>My Manga List</h1>
+            <a href="browse.html" class="btn btn-primary">+ Add Manga</a>
+        </div>
+
+        <div class="filter-bar">
+            <button class="filter-btn active" data-filter="all">All</button>
+            <button class="filter-btn" data-filter="Reading">Reading</button>
+            <button class="filter-btn" data-filter="Completed">Completed</button>
+            <button class="filter-btn" data-filter="Dropped">Dropped</button>
+            <button class="filter-btn" data-filter="Plan to Read">Plan to Read</button>
+        </div>
+
+        <div id="manga-list" class="list-grid">
+            <!-- Manga items will be loaded here by JavaScript -->
+        </div>
+
+        <div id="empty-state" class="empty-state hidden">
+            <p>No manga found. Go to Browse to add some!</p>
+        </div>
+    </main>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
