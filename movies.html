@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Movies - Anime Tracker</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+
+    <nav class="navbar">
+        <div class="nav-brand">Tracker</div>
+        <div class="nav-links">
+            <a href="index.html">Home</a>
+            <a href="anime.html">Anime</a>
+            <a href="manga.html">Manga</a>
+            <a href="tv.html">TV Shows</a>
+            <a href="movies.html" class="active">Movies</a>
+            <a href="browse.html">Browse</a>
+        </div>
+    </nav>
+
+    <main class="container">
+        <div class="page-header">
+            <h1>My Movies</h1>
+            <a href="browse.html" class="btn btn-primary">+ Add Movie</a>
+        </div>
+
+        <div class="filter-bar">
+            <button class="filter-btn active" data-filter="all">All</button>
+            <button class="filter-btn" data-filter="Watching">Watching</button>
+            <button class="filter-btn" data-filter="Completed">Completed</button>
+            <button class="filter-btn" data-filter="Dropped">Dropped</button>
+            <button class="filter-btn" data-filter="Plan to Watch">Plan to Watch</button>
+        </div>
+
+        <div id="movies-list" class="list-grid"></div>
+
+        <div id="empty-state" class="empty-state hidden">
+            <p>No movies found. Go to Browse to add some!</p>
+        </div>
+    </main>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
