@@ -1,1 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Browse - Anime Tracker</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">Anime Tracker</div>
+        <div class="nav-links">
+            <a href="index.html">Home</a>
+            <a href="anime.html">My Anime</a>
+            <a href="manga.html">My Manga</a>
+            <a href="browse.html" class="active">Browse</a>
+        </div>
+    </nav>
 
+    <main class="container">
+        <h1>Browse</h1>
+
+        <div class="search-type-toggle">
+            <button class="toggle-btn active" id="search-anime">Search Anime</button>
+            <button class="toggle-btn" id="search-manga">Search Manga</button>
+        </div>
+
+        <div class="search-box">
+            <input type="text" id="search-input" placeholder="Search for anime or manga...">
+            <button id="search-btn" class="btn btn-primary">Search</button>
+        </div>
+
+        <div id="search-results" class="list-grid">
+            <!-- Search results will appear here -->
+        </div>
+
+        <div id="loading" class="loading hidden">Loading...</div>
+        <div id="no-results" class="empty-state hidden">No results found.</div>
+    </main>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
