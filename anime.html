@@ -3,16 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Anime - Anime Tracker</title>
+    <title>My Anime - Tracker</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+
     <nav class="navbar">
-        <div class="nav-brand">Anime Tracker</div>
+        <div class="nav-brand">Tracker</div>
         <div class="nav-links">
             <a href="index.html">Home</a>
-            <a href="anime.html" class="active">My Anime</a>
-            <a href="manga.html">My Manga</a>
+            <a href="anime.html" class="active">Anime</a>
+            <a href="manga.html">Manga</a>
+            <a href="tv.html">TV Shows</a>
+            <a href="movies.html">Movies</a>
             <a href="browse.html">Browse</a>
         </div>
     </nav>
@@ -31,9 +36,7 @@
             <button class="filter-btn" data-filter="Plan to Watch">Plan to Watch</button>
         </div>
 
-        <div id="anime-list" class="list-grid">
-            <!-- Anime items will be loaded here by JavaScript -->
-        </div>
+        <div id="anime-list" class="list-grid"></div>
 
         <div id="empty-state" class="empty-state hidden">
             <p>No anime found. Go to Browse to add some!</p>
