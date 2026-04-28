@@ -2,22 +2,18 @@
 // LOCALSTORAGE DATA MANAGEMENT
 // ============================================
 
-// Keys for localStorage
 const ANIME_KEY = 'anime_tracker_anime';
 const MANGA_KEY = 'anime_tracker_manga';
 
-// Load list from localStorage
 function loadList(key) {
     const data = localStorage.getItem(key);
     return data ? JSON.parse(data) : [];
 }
 
-// Save list to localStorage
 function saveList(key, list) {
     localStorage.setItem(key, JSON.stringify(list));
 }
 
-// Get the correct key based on page type
 function getCurrentKey() {
     const path = window.location.pathname;
     if (path.includes('anime.html')) return ANIME_KEY;
@@ -29,23 +25,18 @@ function getCurrentKey() {
 // ADD / REMOVE / UPDATE ITEMS
 // ============================================
 
-// Add item to a list (used by browse page)
 function addToList(key, item) {
     const list = loadList(key);
-    
-    // Check if already in list
     if (list.some(i => i.mal_id === item.mal_id)) {
         showToast('Already in your list!');
         return false;
     }
-    
     list.push(item);
     saveList(key, list);
     showToast('Added successfully!');
     return true;
 }
 
-// Remove item from list
 function removeFromList(key, malId) {
     let list = loadList(key);
     list = list.filter(item => item.mal_id !== malId);
@@ -54,7 +45,6 @@ function removeFromList(key, malId) {
     showToast('Removed');
 }
 
-// Update item status
 function updateStatus(key, malId, newStatus) {
     const list = loadList(key);
     const item = list.find(i => i.mal_id === malId);
@@ -65,7 +55,6 @@ function updateStatus(key, malId, newStatus) {
     }
 }
 
-// Update item score
 function updateScore(key, malId, newScore) {
     const list = loadList(key);
     const item = list.find(i => i.mal_id === malId);
@@ -79,7 +68,6 @@ function updateScore(key, malId, newScore) {
 // RENDER LIST CARDS
 // ============================================
 
-// Create HTML for a single card
 function createCard(item, type) {
     const statusClass = getStatusClass(item.status);
     const statusOptions = type === 'anime' 
@@ -110,7 +98,6 @@ function createCard(item, type) {
     `;
 }
 
-// Get CSS class for status badge
 function getStatusClass(status) {
     if (status === 'Watching' || status === 'Reading') return 'status-watching';
     if (status === 'Completed') return 'status-completed';
@@ -118,7 +105,6 @@ function getStatusClass(status) {
     return 'status-plan';
 }
 
-// Render the list based on current filter
 function renderList() {
     const key = getCurrentKey();
     if (!key) return;
@@ -128,11 +114,9 @@ function renderList() {
     const container = document.getElementById(type + '-list');
     const emptyState = document.getElementById('empty-state');
     
-    // Get active filter
     const activeFilter = document.querySelector('.filter-btn.active');
     const filter = activeFilter ? activeFilter.dataset.filter : 'all';
     
-    // Filter items
     const filtered = filter === 'all' ? list : list.filter(item => item.status === filter);
     
     if (filtered.length === 0) {
@@ -174,13 +158,119 @@ function showToast(message) {
 }
 
 // ============================================
+// JIKAN API SEARCH
+// ============================================
+
+let currentSearchType = 'anime';
+
+function setupSearch() {
+    const searchAnimeBtn = document.getElementById('search-anime');
+    const searchMangaBtn = document.getElementById('search-manga');
+    const searchBtn = document.getElementById('search-btn');
+    const searchInput = document.getElementById('search-input');
+    
+    if (!searchBtn) return;
+    
+    searchAnimeBtn.addEventListener('click', () => {
+        currentSearchType = 'anime';
+        searchAnimeBtn.classList.add('active');
+        searchMangaBtn.classList.remove('active');
+        searchInput.placeholder = 'Search for anime...';
+    });
+    
+    searchMangaBtn.addEventListener('click', () => {
+        currentSearchType = 'manga';
+        searchMangaBtn.classList.add('active');
+        searchAnimeBtn.classList.remove('active');
+        searchInput.placeholder = 'Search for manga...';
+    });
+    
+    searchBtn.addEventListener('click', () => performSearch());
+    
+    searchInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') performSearch();
+    });
+}
+
+async function performSearch() {
+    const query = document.getElementById('search-input').value.trim();
+    if (!query) return;
+    
+    const resultsContainer = document.getElementById('search-results');
+    const loading = document.getElementById('loading');
+    const noResults = document.getElementById('no-results');
+    
+    resultsContainer.innerHTML = '';
+    noResults.classList.add('hidden');
+    loading.classList.remove('hidden');
+    
+    try {
+        const response = await fetch(`https://api.jikan.moe/v4/${currentSearchType}?q=${encodeURIComponent(query)}&limit=24`);
+        const data = await response.json();
+        
+        loading.classList.add('hidden');
+        
+        if (!data.data || data.data.length === 0) {
+            noResults.classList.remove('hidden');
+            return;
+        }
+        
+        resultsContainer.innerHTML = data.data.map(item => createSearchCard(item)).join('');
+        
+    } catch (error) {
+        loading.classList.add('hidden');
+        showToast('Search failed. Try again.');
+        console.error(error);
+    }
+}
+
+function createSearchCard(item) {
+    const title = item.title || item.title_english || 'Unknown Title';
+    const image = item.images?.jpg?.image_url || 'https://via.placeholder.com/200x280/2a2a2a/666?text=No+Image';
+    const malId = item.mal_id;
+    
+    return `
+        <div class="card">
+            <img src="${image}" alt="${title}" class="card-image" onerror="this.src='https://via.placeholder.com/200x280/2a2a2a/666?text=No+Image'">
+            <div class="card-body">
+                <div class="card-title">${title}</div>
+                <div class="card-meta">
+                    <span class="score-display">★ ${item.score || 'N/A'}</span>
+                </div>
+                <button class="btn btn-add" style="width:100%;" onclick="addFromBrowse(${malId}, '${title.replace(/'/g, "\\'")}', '${image}', '${currentSearchType}')">
+                    + Add to List
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+function addFromBrowse(malId, title, imageUrl, type) {
+    const key = type === 'anime' ? ANIME_KEY : MANGA_KEY;
+    const defaultStatus = type === 'anime' ? 'Plan to Watch' : 'Plan to Read';
+    
+    const item = {
+        mal_id: malId,
+        title: title,
+        image_url: imageUrl,
+        status: defaultStatus,
+        score: null
+    };
+    
+    addToList(key, item);
+}
+
+// ============================================
 // INITIALIZE PAGES
 // ============================================
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Setup anime/manga list pages
     if (document.getElementById('anime-list') || document.getElementById('manga-list')) {
         setupFilters();
         renderList();
+    }
+    
+    if (document.getElementById('search-results')) {
+        setupSearch();
     }
 });
