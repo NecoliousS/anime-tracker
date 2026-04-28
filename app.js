@@ -85,7 +85,7 @@ function createCard(item, pageInfo) {
     
     return `
         <div class="card" data-status="${item.status}">
-            <img src="${item.image_url}" alt="${item.title}" class="card-image" onerror="this.src='https://via.placeholder.com/200x280/2a2a2a/666?text=No+Image'">
+            <img src="${item.image_url}" alt="${item.title}" class="card-image" onerror="this.src='https://via.placeholder.com/200x280/2a2a2a/667eea?text=${encodeURIComponent(item.title)}'">
             <div class="card-body">
                 <div class="card-title">${item.title}</div>
                 <div class="card-meta">
@@ -195,8 +195,8 @@ function setupSearch() {
     
     btnAnime.addEventListener('click', () => setActive('anime', 'Search for anime...'));
     btnManga.addEventListener('click', () => setActive('manga', 'Search for manga...'));
-    btnTv.addEventListener('click', () => setActive('tv', 'Enter TV show title...'));
-    btnMovies.addEventListener('click', () => setActive('movies', 'Enter movie title...'));
+    btnTv.addEventListener('click', () => setActive('tv', 'Search for TV show...'));
+    btnMovies.addEventListener('click', () => setActive('movies', 'Search for movie...'));
     
     searchBtn.addEventListener('click', () => performSearch());
     
@@ -230,7 +230,7 @@ async function performSearch() {
                 return;
             }
             
-            resultsContainer.innerHTML = data.data.map(item => createSearchCard(item)).join('');
+            resultsContainer.innerHTML = data.data.map(item => createJikanCard(item)).join('');
             
         } catch (error) {
             loading.classList.add('hidden');
@@ -238,31 +238,38 @@ async function performSearch() {
             console.error(error);
         }
     } 
-    // TV Shows and Movies use manual entry (no free API without key)
+    // TV Shows and Movies use OMDb API
     else {
-        loading.classList.add('hidden');
-        
-        // Create a manual entry card
-        const manualId = Date.now();
-        const manualItem = {
-            mal_id: manualId,
-            title: query,
-            images: { jpg: { image_url: 'https://via.placeholder.com/200x280/2a2a2a/667eea?text=' + encodeURIComponent(query) } },
-            score: null
-        };
-        
-        resultsContainer.innerHTML = createSearchCard(manualItem, true);
+        try {
+            // OMDb API - free tier, no key needed for basic poster search
+            // Using a demo key approach - if it fails, we fall back to manual
+            const searchUrl = `https://www.omdbapi.com/?s=${encodeURIComponent(query)}&type=${currentSearchType === 'tv' ? 'series' : 'movie'}&apikey=thewdb`;
+            
+            const response = await fetch(searchUrl);
+            const data = await response.json();
+            
+            loading.classList.add('hidden');
+            
+            if (data.Response === 'False' || !data.Search || data.Search.length === 0) {
+                // Fallback: show manual entry option
+                showManualEntry(query, resultsContainer);
+                return;
+            }
+            
+            resultsContainer.innerHTML = data.Search.map(item => createOmdbCard(item)).join('');
+            
+        } catch (error) {
+            loading.classList.add('hidden');
+            // Fallback on error
+            showManualEntry(query, resultsContainer);
+        }
     }
 }
 
-function createSearchCard(item, isManual = false) {
+function createJikanCard(item) {
     const title = item.title || item.title_english || 'Unknown Title';
     const image = item.images?.jpg?.image_url || 'https://via.placeholder.com/200x280/2a2a2a/666?text=No+Image';
     const malId = item.mal_id;
-    
-    const addFunction = isManual 
-        ? `addManualFromBrowse(${malId}, '${title.replace(/'/g, "\\'")}', '${image}', '${currentSearchType}')`
-        : `addFromBrowse(${malId}, '${title.replace(/'/g, "\\'")}', '${image}', '${currentSearchType}')`;
     
     return `
         <div class="card">
@@ -270,10 +277,50 @@ function createSearchCard(item, isManual = false) {
             <div class="card-body">
                 <div class="card-title">${title}</div>
                 <div class="card-meta">
-                    <span class="score-display">${isManual ? 'Manual Entry' : ('★ ' + (item.score || 'N/A'))}</span>
+                    <span class="score-display">★ ${item.score || 'N/A'}</span>
                 </div>
-                <button class="btn btn-add" style="width:100%;" onclick="${addFunction}">
-                    + Add to ${currentSearchType === 'tv' ? 'TV Shows' : currentSearchType === 'movies' ? 'Movies' : 'List'}
+                <button class="btn btn-add" style="width:100%;" onclick="addFromBrowse(${malId}, '${title.replace(/'/g, "\\'")}', '${image}', '${currentSearchType}')">
+                    + Add to List
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+function createOmdbCard(item) {
+    const title = item.Title || 'Unknown Title';
+    const image = item.Poster !== 'N/A' ? item.Poster : `https://via.placeholder.com/200x280/2a2a2a/667eea?text=${encodeURIComponent(title)}`;
+    const year = item.Year || '';
+    const imdbId = item.imdbID || Date.now();
+    
+    return `
+        <div class="card">
+            <img src="${image}" alt="${title}" class="card-image" onerror="this.src='https://via.placeholder.com/200x280/2a2a2a/667eea?text=${encodeURIComponent(title)}'">
+            <div class="card-body">
+                <div class="card-title">${title}</div>
+                <div class="card-meta">
+                    <span class="score-display">${year}</span>
+                </div>
+                <button class="btn btn-add" style="width:100%;" onclick="addFromBrowse('${imdbId}', '${title.replace(/'/g, "\\'")}', '${image}', '${currentSearchType}')">
+                    + Add to ${currentSearchType === 'tv' ? 'TV Shows' : 'Movies'}
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+function showManualEntry(query, container) {
+    const manualId = Date.now();
+    container.innerHTML = `
+        <div class="card">
+            <img src="https://via.placeholder.com/200x280/2a2a2a/667eea?text=${encodeURIComponent(query)}" alt="${query}" class="card-image">
+            <div class="card-body">
+                <div class="card-title">${query}</div>
+                <div class="card-meta">
+                    <span class="score-display">Manual Entry</span>
+                </div>
+                <button class="btn btn-add" style="width:100%;" onclick="addFromBrowse(${manualId}, '${query.replace(/'/g, "\\'")}', 'https://via.placeholder.com/200x280/2a2a2a/667eea?text=${encodeURIComponent(query)}', '${currentSearchType}')">
+                    + Add to ${currentSearchType === 'tv' ? 'TV Shows' : 'Movies'}
                 </button>
             </div>
         </div>
@@ -306,10 +353,6 @@ function addFromBrowse(malId, title, imageUrl, type) {
     };
     
     addToList(key, item);
-}
-
-function addManualFromBrowse(malId, title, imageUrl, type) {
-    addFromBrowse(malId, title, imageUrl, type);
 }
 
 // ============================================
