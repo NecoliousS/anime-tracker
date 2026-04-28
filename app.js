@@ -1,9 +1,25 @@
 // ============================================
-// LOCALSTORAGE DATA MANAGEMENT
+// LOCALSTORAGE KEYS
 // ============================================
 
-const ANIME_KEY = 'anime_tracker_anime';
-const MANGA_KEY = 'anime_tracker_manga';
+const ANIME_KEY = 'tracker_anime';
+const MANGA_KEY = 'tracker_manga';
+const TV_KEY = 'tracker_tv';
+const MOVIES_KEY = 'tracker_movies';
+
+// Map page to key
+function getPageKey() {
+    const path = window.location.pathname;
+    if (path.includes('anime.html')) return { key: ANIME_KEY, type: 'anime', defaultStatus: 'Plan to Watch' };
+    if (path.includes('manga.html')) return { key: MANGA_KEY, type: 'manga', defaultStatus: 'Plan to Read' };
+    if (path.includes('tv.html')) return { key: TV_KEY, type: 'tv', defaultStatus: 'Plan to Watch' };
+    if (path.includes('movies.html')) return { key: MOVIES_KEY, type: 'movies', defaultStatus: 'Plan to Watch' };
+    return null;
+}
+
+// ============================================
+// LOAD / SAVE
+// ============================================
 
 function loadList(key) {
     const data = localStorage.getItem(key);
@@ -14,15 +30,8 @@ function saveList(key, list) {
     localStorage.setItem(key, JSON.stringify(list));
 }
 
-function getCurrentKey() {
-    const path = window.location.pathname;
-    if (path.includes('anime.html')) return ANIME_KEY;
-    if (path.includes('manga.html')) return MANGA_KEY;
-    return null;
-}
-
 // ============================================
-// ADD / REMOVE / UPDATE ITEMS
+// ADD / REMOVE / UPDATE
 // ============================================
 
 function addToList(key, item) {
@@ -59,20 +68,20 @@ function updateScore(key, malId, newScore) {
     const list = loadList(key);
     const item = list.find(i => i.mal_id === malId);
     if (item) {
-        item.score = parseInt(newScore);
+        item.score = parseInt(newScore) || null;
         saveList(key, list);
     }
 }
 
 // ============================================
-// RENDER LIST CARDS
+// RENDER CARDS
 // ============================================
 
-function createCard(item, type) {
+function createCard(item, pageInfo) {
     const statusClass = getStatusClass(item.status);
-    const statusOptions = type === 'anime' 
-        ? ['Watching', 'Completed', 'Dropped', 'Plan to Watch']
-        : ['Reading', 'Completed', 'Dropped', 'Plan to Read'];
+    const statusOptions = pageInfo.type === 'manga' 
+        ? ['Reading', 'Completed', 'Dropped', 'Plan to Read']
+        : ['Watching', 'Completed', 'Dropped', 'Plan to Watch'];
     
     return `
         <div class="card" data-status="${item.status}">
@@ -84,15 +93,15 @@ function createCard(item, type) {
                     <span class="score-display">★ ${item.score || '-'}</span>
                 </div>
                 <div class="card-actions">
-                    <select onchange="updateStatus('${type === 'anime' ? ANIME_KEY : MANGA_KEY}', ${item.mal_id}, this.value)">
+                    <select onchange="updateStatus('${pageInfo.key}', ${item.mal_id}, this.value)">
                         ${statusOptions.map(s => `<option value="${s}" ${item.status === s ? 'selected' : ''}>${s}</option>`).join('')}
                     </select>
-                    <select onchange="updateScore('${type === 'anime' ? ANIME_KEY : MANGA_KEY}', ${item.mal_id}, this.value)">
+                    <select onchange="updateScore('${pageInfo.key}', ${item.mal_id}, this.value)">
                         <option value="">Score</option>
                         ${[1,2,3,4,5,6,7,8,9,10].map(n => `<option value="${n}" ${item.score === n ? 'selected' : ''}>${n}</option>`).join('')}
                     </select>
                 </div>
-                <button class="btn btn-danger" style="width:100%; margin-top:0.5rem;" onclick="removeFromList('${type === 'anime' ? ANIME_KEY : MANGA_KEY}', ${item.mal_id})">Delete</button>
+                <button class="btn btn-danger" style="width:100%; margin-top:0.5rem;" onclick="removeFromList('${pageInfo.key}', ${item.mal_id})">Delete</button>
             </div>
         </div>
     `;
@@ -106,12 +115,11 @@ function getStatusClass(status) {
 }
 
 function renderList() {
-    const key = getCurrentKey();
-    if (!key) return;
+    const pageInfo = getPageKey();
+    if (!pageInfo) return;
     
-    const type = key === ANIME_KEY ? 'anime' : 'manga';
-    const list = loadList(key);
-    const container = document.getElementById(type + '-list');
+    const list = loadList(pageInfo.key);
+    const container = document.getElementById(pageInfo.type + '-list');
     const emptyState = document.getElementById('empty-state');
     
     const activeFilter = document.querySelector('.filter-btn.active');
@@ -120,16 +128,16 @@ function renderList() {
     const filtered = filter === 'all' ? list : list.filter(item => item.status === filter);
     
     if (filtered.length === 0) {
-        container.innerHTML = '';
-        emptyState.classList.remove('hidden');
+        if (container) container.innerHTML = '';
+        if (emptyState) emptyState.classList.remove('hidden');
     } else {
-        emptyState.classList.add('hidden');
-        container.innerHTML = filtered.map(item => createCard(item, type)).join('');
+        if (emptyState) emptyState.classList.add('hidden');
+        if (container) container.innerHTML = filtered.map(item => createCard(item, pageInfo)).join('');
     }
 }
 
 // ============================================
-// FILTER BUTTONS
+// FILTERS
 // ============================================
 
 function setupFilters() {
@@ -144,7 +152,7 @@ function setupFilters() {
 }
 
 // ============================================
-// TOAST NOTIFICATIONS
+// TOAST
 // ============================================
 
 function showToast(message) {
@@ -246,8 +254,15 @@ function createSearchCard(item) {
 }
 
 function addFromBrowse(malId, title, imageUrl, type) {
-    const key = type === 'anime' ? ANIME_KEY : MANGA_KEY;
-    const defaultStatus = type === 'anime' ? 'Plan to Watch' : 'Plan to Read';
+    let key, defaultStatus;
+    
+    if (type === 'anime') {
+        key = ANIME_KEY;
+        defaultStatus = 'Plan to Watch';
+    } else {
+        key = MANGA_KEY;
+        defaultStatus = 'Plan to Read';
+    }
     
     const item = {
         mal_id: malId,
@@ -261,11 +276,12 @@ function addFromBrowse(malId, title, imageUrl, type) {
 }
 
 // ============================================
-// INITIALIZE PAGES
+// INIT
 // ============================================
 
 document.addEventListener('DOMContentLoaded', () => {
-    if (document.getElementById('anime-list') || document.getElementById('manga-list')) {
+    const pageInfo = getPageKey();
+    if (pageInfo) {
         setupFilters();
         renderList();
     }
