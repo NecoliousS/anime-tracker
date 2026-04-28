@@ -166,32 +166,37 @@ function showToast(message) {
 }
 
 // ============================================
-// JIKAN API SEARCH
+// SEARCH / BROWSE
 // ============================================
 
 let currentSearchType = 'anime';
 
 function setupSearch() {
-    const searchAnimeBtn = document.getElementById('search-anime');
-    const searchMangaBtn = document.getElementById('search-manga');
+    const btnAnime = document.getElementById('search-anime');
+    const btnManga = document.getElementById('search-manga');
+    const btnTv = document.getElementById('search-tv');
+    const btnMovies = document.getElementById('search-movies');
     const searchBtn = document.getElementById('search-btn');
     const searchInput = document.getElementById('search-input');
     
     if (!searchBtn) return;
     
-    searchAnimeBtn.addEventListener('click', () => {
-        currentSearchType = 'anime';
-        searchAnimeBtn.classList.add('active');
-        searchMangaBtn.classList.remove('active');
-        searchInput.placeholder = 'Search for anime...';
-    });
+    const setActive = (type, placeholder) => {
+        currentSearchType = type;
+        [btnAnime, btnManga, btnTv, btnMovies].forEach(b => b.classList.remove('active'));
+        
+        if (type === 'anime') btnAnime.classList.add('active');
+        if (type === 'manga') btnManga.classList.add('active');
+        if (type === 'tv') btnTv.classList.add('active');
+        if (type === 'movies') btnMovies.classList.add('active');
+        
+        searchInput.placeholder = placeholder;
+    };
     
-    searchMangaBtn.addEventListener('click', () => {
-        currentSearchType = 'manga';
-        searchMangaBtn.classList.add('active');
-        searchAnimeBtn.classList.remove('active');
-        searchInput.placeholder = 'Search for manga...';
-    });
+    btnAnime.addEventListener('click', () => setActive('anime', 'Search for anime...'));
+    btnManga.addEventListener('click', () => setActive('manga', 'Search for manga...'));
+    btnTv.addEventListener('click', () => setActive('tv', 'Enter TV show title...'));
+    btnMovies.addEventListener('click', () => setActive('movies', 'Enter movie title...'));
     
     searchBtn.addEventListener('click', () => performSearch());
     
@@ -212,30 +217,52 @@ async function performSearch() {
     noResults.classList.add('hidden');
     loading.classList.remove('hidden');
     
-    try {
-        const response = await fetch(`https://api.jikan.moe/v4/${currentSearchType}?q=${encodeURIComponent(query)}&limit=24`);
-        const data = await response.json();
-        
-        loading.classList.add('hidden');
-        
-        if (!data.data || data.data.length === 0) {
-            noResults.classList.remove('hidden');
-            return;
+    // Anime and Manga use Jikan API
+    if (currentSearchType === 'anime' || currentSearchType === 'manga') {
+        try {
+            const response = await fetch(`https://api.jikan.moe/v4/${currentSearchType}?q=${encodeURIComponent(query)}&limit=24`);
+            const data = await response.json();
+            
+            loading.classList.add('hidden');
+            
+            if (!data.data || data.data.length === 0) {
+                noResults.classList.remove('hidden');
+                return;
+            }
+            
+            resultsContainer.innerHTML = data.data.map(item => createSearchCard(item)).join('');
+            
+        } catch (error) {
+            loading.classList.add('hidden');
+            showToast('Search failed. Try again.');
+            console.error(error);
         }
-        
-        resultsContainer.innerHTML = data.data.map(item => createSearchCard(item)).join('');
-        
-    } catch (error) {
+    } 
+    // TV Shows and Movies use manual entry (no free API without key)
+    else {
         loading.classList.add('hidden');
-        showToast('Search failed. Try again.');
-        console.error(error);
+        
+        // Create a manual entry card
+        const manualId = Date.now();
+        const manualItem = {
+            mal_id: manualId,
+            title: query,
+            images: { jpg: { image_url: 'https://via.placeholder.com/200x280/2a2a2a/667eea?text=' + encodeURIComponent(query) } },
+            score: null
+        };
+        
+        resultsContainer.innerHTML = createSearchCard(manualItem, true);
     }
 }
 
-function createSearchCard(item) {
+function createSearchCard(item, isManual = false) {
     const title = item.title || item.title_english || 'Unknown Title';
     const image = item.images?.jpg?.image_url || 'https://via.placeholder.com/200x280/2a2a2a/666?text=No+Image';
     const malId = item.mal_id;
+    
+    const addFunction = isManual 
+        ? `addManualFromBrowse(${malId}, '${title.replace(/'/g, "\\'")}', '${image}', '${currentSearchType}')`
+        : `addFromBrowse(${malId}, '${title.replace(/'/g, "\\'")}', '${image}', '${currentSearchType}')`;
     
     return `
         <div class="card">
@@ -243,10 +270,10 @@ function createSearchCard(item) {
             <div class="card-body">
                 <div class="card-title">${title}</div>
                 <div class="card-meta">
-                    <span class="score-display">★ ${item.score || 'N/A'}</span>
+                    <span class="score-display">${isManual ? 'Manual Entry' : ('★ ' + (item.score || 'N/A'))}</span>
                 </div>
-                <button class="btn btn-add" style="width:100%;" onclick="addFromBrowse(${malId}, '${title.replace(/'/g, "\\'")}', '${image}', '${currentSearchType}')">
-                    + Add to List
+                <button class="btn btn-add" style="width:100%;" onclick="${addFunction}">
+                    + Add to ${currentSearchType === 'tv' ? 'TV Shows' : currentSearchType === 'movies' ? 'Movies' : 'List'}
                 </button>
             </div>
         </div>
@@ -259,9 +286,15 @@ function addFromBrowse(malId, title, imageUrl, type) {
     if (type === 'anime') {
         key = ANIME_KEY;
         defaultStatus = 'Plan to Watch';
-    } else {
+    } else if (type === 'manga') {
         key = MANGA_KEY;
         defaultStatus = 'Plan to Read';
+    } else if (type === 'tv') {
+        key = TV_KEY;
+        defaultStatus = 'Plan to Watch';
+    } else if (type === 'movies') {
+        key = MOVIES_KEY;
+        defaultStatus = 'Plan to Watch';
     }
     
     const item = {
@@ -273,6 +306,10 @@ function addFromBrowse(malId, title, imageUrl, type) {
     };
     
     addToList(key, item);
+}
+
+function addManualFromBrowse(malId, title, imageUrl, type) {
+    addFromBrowse(malId, title, imageUrl, type);
 }
 
 // ============================================
