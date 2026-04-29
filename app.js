@@ -67,7 +67,7 @@ function showLoginModal() {
     modal.id = 'login-modal';
     modal.innerHTML = `
         <div style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:2000; display:flex; align-items:center; justify-content:center;">
-            <div style="background:#1a1a1a; border:1px solid #333; border-radius:12px; padding:2rem; max-width:400px; width:90%;">
+            <div style="background:#1a1a1a; border:1px solid #333; border-radius:12px; padding:2rem; max-width:400px; width:90%; position:relative;">
                 <h2 style="margin-bottom:1.5rem; color:#fff;">Login</h2>
                 
                 <button onclick="loginWithGoogle()" style="width:100%; padding:0.75rem; background:#4285f4; color:white; border:none; border-radius:8px; cursor:pointer; margin-bottom:1rem; font-weight:600;">
@@ -167,7 +167,7 @@ function loadList(key) {
 
 function saveList(key, list) {
     localStorage.setItem(key, JSON.stringify(list));
-    saveUserData(); // Sync to cloud
+    saveUserData();
 }
 
 function getPageKey() {
@@ -295,7 +295,7 @@ async function showComments(malId, type) {
     modal.id = 'comments-modal';
     modal.innerHTML = `
         <div style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:2000; display:flex; align-items:center; justify-content:center;">
-            <div style="background:#1a1a1a; border:1px solid #333; border-radius:12px; padding:2rem; max-width:500px; width:90%; max-height:80vh; overflow-y:auto;">
+            <div style="background:#1a1a1a; border:1px solid #333; border-radius:12px; padding:2rem; max-width:500px; width:90%; max-height:80vh; overflow-y:auto; position:relative;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
                     <h2 style="color:#fff;">Comments</h2>
                     <button onclick="closeCommentsModal()" style="background:none; border:none; color:#666; font-size:1.5rem; cursor:pointer;">×</button>
