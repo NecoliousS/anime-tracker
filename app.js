@@ -12,13 +12,12 @@ const firebaseConfig = {
   measurementId: "G-DY6SQ0CPT8"
 };
 
-// Initialize Firebase
-const app = firebase.initializeApp(firebaseConfig);
+firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
 
 // ============================================
-// LOCALSTORAGE KEYS
+// CONSTANTS
 // ============================================
 
 const ANIME_KEY = 'tracker_anime';
@@ -26,46 +25,216 @@ const MANGA_KEY = 'tracker_manga';
 const TV_KEY = 'tracker_tv';
 const MOVIES_KEY = 'tracker_movies';
 
+const BANNED_USERNAMES = ['Zer0H20', 'Nik0H20', 'Zer0', 'Nik0', 'niko', 'zero', 'H20'];
+const PROFANITY_LIST = ['fuck', 'shit', 'bitch', 'nigger', 'nigga', 'fag', 'retard'];
+
 let currentUser = null;
+let currentUsername = null;
+let appMode = localStorage.getItem('tracker_mode') || 'solo';
+let currentDetailItem = null;
+let currentDetailType = null;
 
 // ============================================
-// AUTH STATE LISTENER
+// MODE TOGGLE
 // ============================================
 
-auth.onAuthStateChanged((user) => {
-    currentUser = user;
-    updateAuthUI();
-    if (user) {
-        loadUserData();
+function initModeToggle() {
+    const toggleContainer = document.getElementById('mode-toggle');
+    if (!toggleContainer) return;
+    
+    toggleContainer.style.display = 'block';
+    
+    const soloBtn = document.getElementById('mode-solo');
+    const communityBtn = document.getElementById('mode-community');
+    
+    if (!soloBtn || !communityBtn) return;
+    
+    if (appMode === 'solo') {
+        soloBtn.classList.add('active');
+        communityBtn.classList.remove('active');
+        document.body.classList.add('solo-mode');
     } else {
-        renderList();
+        soloBtn.classList.remove('active');
+        communityBtn.classList.add('active');
+        document.body.classList.remove('solo-mode');
     }
+    
+    soloBtn.addEventListener('click', () => {
+        appMode = 'solo';
+        localStorage.setItem('tracker_mode', 'solo');
+        soloBtn.classList.add('active');
+        communityBtn.classList.remove('active');
+        document.body.classList.add('solo-mode');
+        showToast('Solo Mode activated');
+        updateDetailModal();
+    });
+    
+    communityBtn.addEventListener('click', () => {
+        if (!currentUser) {
+            showToast('Login required for Community Mode');
+            showLoginModal();
+            return;
+        }
+        appMode = 'community';
+        localStorage.setItem('tracker_mode', 'community');
+        soloBtn.classList.remove('active');
+        communityBtn.classList.add('active');
+        document.body.classList.remove('solo-mode');
+        showToast('Community Mode activated');
+        updateDetailModal();
+    });
+}
+
+// ============================================
+// AUTH STATE
+// ============================================
+
+auth.onAuthStateChanged(async (user) => {
+    currentUser = user;
+    if (user) {
+        await loadUsername();
+        await loadUserData();
+    } else {
+        currentUsername = null;
+        if (appMode === 'community') {
+            appMode = 'solo';
+            localStorage.setItem('tracker_mode', 'solo');
+        }
+    }
+    updateAuthUI();
+    renderList();
+    initModeToggle();
 });
 
-function updateAuthUI() {
-    const authContainer = document.getElementById('auth-container');
-    if (!authContainer) return;
-    
-    if (currentUser) {
-        authContainer.innerHTML = `
-            <span style="color:#a0a0a0; font-size:0.85rem;">${currentUser.email || currentUser.displayName || 'User'}</span>
-            <button id="logout-btn" class="btn btn-danger" style="padding:0.4rem 0.8rem; font-size:0.8rem;">Logout</button>
-        `;
-        document.getElementById('logout-btn').addEventListener('click', logout);
-    } else {
-        authContainer.innerHTML = `
-            <button id="login-btn" class="btn btn-primary" style="padding:0.4rem 0.8rem; font-size:0.8rem;">Login</button>
-        `;
-        document.getElementById('login-btn').addEventListener('click', showLoginModal);
+async function loadUsername() {
+    if (!currentUser) return;
+    const doc = await db.collection('usernames').doc(currentUser.uid).get();
+    if (doc.exists) {
+        currentUsername = doc.data().username;
     }
+}
+
+// ============================================
+// USERNAME SYSTEM
+// ============================================
+
+function showUsernameModal() {
+    closeLoginModal();
+    
+    const modal = document.createElement('div');
+    modal.id = 'username-modal';
+    modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:2000; display:flex; align-items:center; justify-content:center;';
+    
+    modal.innerHTML = `
+        <div style="background:#1a1a1a; border:1px solid #333; border-radius:12px; padding:2rem; max-width:400px; width:90%; text-align:center;">
+            <h2 style="color:#fff; margin-bottom:0.5rem;">Choose Your Username</h2>
+            <p style="color:#666; margin-bottom:1.5rem;">This will be visible to other users</p>
+            
+            <input type="text" id="username-input" placeholder="Enter username..." maxlength="20" style="width:100%; padding:0.75rem; background:#0a0a0a; border:1px solid #333; border-radius:8px; color:#e0e0e0; margin-bottom:1rem; text-align:center;">
+            
+            <div id="username-error" style="color:#ef4444; font-size:0.85rem; margin-bottom:1rem; display:none;"></div>
+            
+            <button id="save-username-btn" style="width:100%; padding:0.75rem; background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); color:white; border:none; border-radius:8px; cursor:pointer; font-weight:600;">
+                Save Username
+            </button>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    setTimeout(() => {
+        const saveBtn = document.getElementById('save-username-btn');
+        if (saveBtn) saveBtn.addEventListener('click', saveUsername);
+    }, 0);
+}
+
+async function saveUsername() {
+    const input = document.getElementById('username-input');
+    const errorDiv = document.getElementById('username-error');
+    const username = input.value.trim();
+    
+    if (!username) {
+        errorDiv.textContent = 'Username cannot be empty';
+        errorDiv.style.display = 'block';
+        return;
+    }
+    
+    if (username.length < 3) {
+        errorDiv.textContent = 'Username must be at least 3 characters';
+        errorDiv.style.display = 'block';
+        return;
+    }
+    
+    const lowerUsername = username.toLowerCase();
+    for (const banned of BANNED_USERNAMES) {
+        if (lowerUsername === banned.toLowerCase()) {
+            errorDiv.textContent = 'This username is reserved';
+            errorDiv.style.display = 'block';
+            return;
+        }
+    }
+    
+    for (const word of PROFANITY_LIST) {
+        if (lowerUsername.includes(word)) {
+            errorDiv.textContent = 'Username contains inappropriate language';
+            errorDiv.style.display = 'block';
+            return;
+        }
+    }
+    
+    const existing = await db.collection('usernames').where('username', '==', username).get();
+    if (!existing.empty) {
+        errorDiv.textContent = 'Username already taken';
+        errorDiv.style.display = 'block';
+        return;
+    }
+    
+    await db.collection('usernames').doc(currentUser.uid).set({
+        username: username,
+        email: currentUser.email,
+        createdAt: new Date()
+    });
+    
+    currentUsername = username;
+    closeUsernameModal();
+    showToast('Welcome, ' + username + '!');
+}
+
+function closeUsernameModal() {
+    const modal = document.getElementById('username-modal');
+    if (modal) modal.remove();
 }
 
 // ============================================
 // LOGIN MODAL
 // ============================================
 
+function updateAuthUI() {
+    const authContainer = document.getElementById('auth-container');
+    if (!authContainer) return;
+    
+    if (currentUser) {
+        const displayName = currentUsername || currentUser.email?.split('@')[0] || 'User';
+        authContainer.innerHTML = `
+            <span style="color:#a0a0a0; font-size:0.85rem;">${displayName}</span>
+            <button id="logout-btn" class="btn btn-danger" style="padding:0.4rem 0.8rem; font-size:0.8rem;">Logout</button>
+        `;
+        setTimeout(() => {
+            const btn = document.getElementById('logout-btn');
+            if (btn) btn.addEventListener('click', logout);
+        }, 0);
+    } else {
+        authContainer.innerHTML = `
+            <button id="login-btn" class="btn btn-primary" style="padding:0.4rem 0.8rem; font-size:0.8rem;">Login</button>
+        `;
+        setTimeout(() => {
+            const btn = document.getElementById('login-btn');
+            if (btn) btn.addEventListener('click', showLoginModal);
+        }, 0);
+    }
+}
+
 function showLoginModal() {
-    // Remove existing modal
     closeLoginModal();
     
     const modal = document.createElement('div');
@@ -73,7 +242,7 @@ function showLoginModal() {
     modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:2000; display:flex; align-items:center; justify-content:center;';
     
     modal.innerHTML = `
-        <div id="modal-content" style="background:#1a1a1a; border:1px solid #333; border-radius:12px; padding:2rem; max-width:400px; width:90%; position:relative;">
+        <div style="background:#1a1a1a; border:1px solid #333; border-radius:12px; padding:2rem; max-width:400px; width:90%; position:relative;">
             <h2 style="margin-bottom:1.5rem; color:#fff;">Login</h2>
             
             <button id="google-login-btn" style="width:100%; padding:0.75rem; background:#4285f4; color:white; border:none; border-radius:8px; cursor:pointer; margin-bottom:1rem; font-weight:600;">
@@ -98,13 +267,13 @@ function showLoginModal() {
     
     document.body.appendChild(modal);
     
-    // Attach event listeners
-    document.getElementById('close-modal-btn').addEventListener('click', closeLoginModal);
-    document.getElementById('google-login-btn').addEventListener('click', loginWithGoogle);
-    document.getElementById('email-login-btn').addEventListener('click', loginWithEmail);
-    document.getElementById('signup-btn').addEventListener('click', signupWithEmail);
+    setTimeout(() => {
+        document.getElementById('close-modal-btn').addEventListener('click', closeLoginModal);
+        document.getElementById('google-login-btn').addEventListener('click', loginWithGoogle);
+        document.getElementById('email-login-btn').addEventListener('click', loginWithEmail);
+        document.getElementById('signup-btn').addEventListener('click', signupWithEmail);
+    }, 0);
     
-    // Close on background click
     modal.addEventListener('click', (e) => {
         if (e.target === modal) closeLoginModal();
     });
@@ -115,20 +284,20 @@ function closeLoginModal() {
     if (modal) modal.remove();
 }
 
-// ============================================
-// AUTH FUNCTIONS
-// ============================================
-
 function loginWithGoogle() {
     const provider = new firebase.auth.GoogleAuthProvider();
     auth.signInWithPopup(provider)
-        .then(() => {
+        .then(async (result) => {
             closeLoginModal();
-            showToast('Signed in with Google');
+            const doc = await db.collection('usernames').doc(result.user.uid).get();
+            if (!doc.exists) {
+                showUsernameModal();
+            } else {
+                showToast('Signed in as ' + doc.data().username);
+            }
         })
         .catch(err => {
             showToast('Google sign-in failed: ' + err.message);
-            console.error('Google login error:', err);
         });
 }
 
@@ -142,13 +311,17 @@ function loginWithEmail() {
     }
     
     auth.signInWithEmailAndPassword(email, password)
-        .then(() => {
+        .then(async (result) => {
             closeLoginModal();
-            showToast('Signed in successfully');
+            const doc = await db.collection('usernames').doc(result.user.uid).get();
+            if (!doc.exists) {
+                showUsernameModal();
+            } else {
+                showToast('Signed in as ' + doc.data().username);
+            }
         })
         .catch(err => {
             showToast('Sign in failed: ' + err.message);
-            console.error('Email login error:', err);
         });
 }
 
@@ -169,22 +342,22 @@ function signupWithEmail() {
     auth.createUserWithEmailAndPassword(email, password)
         .then(() => {
             closeLoginModal();
-            showToast('Account created successfully');
+            showUsernameModal();
         })
         .catch(err => {
             showToast('Sign up failed: ' + err.message);
-            console.error('Signup error:', err);
         });
 }
 
 function logout() {
-    auth.signOut()
-        .then(() => showToast('Logged out'))
-        .catch(err => console.error('Logout error:', err));
+    auth.signOut().then(() => {
+        currentUsername = null;
+        showToast('Logged out');
+    });
 }
 
 // ============================================
-// USER DATA (Firestore)
+// USER DATA
 // ============================================
 
 async function loadUserData() {
@@ -222,7 +395,7 @@ async function saveUserData() {
 }
 
 // ============================================
-// LOCALSTORAGE WRAPPER
+// LOCALSTORAGE
 // ============================================
 
 function loadList(key) {
@@ -298,7 +471,7 @@ function createCard(item, pageInfo) {
         : ['Watching', 'Completed', 'Dropped', 'Plan to Watch'];
     
     return `
-        <div class="card" data-status="${item.status}">
+        <div class="card" data-status="${item.status}" onclick="openDetailModal(${item.mal_id}, '${pageInfo.type}')">
             <img src="${item.image_url}" alt="${item.title}" class="card-image" onerror="this.src='https://via.placeholder.com/200x280/2a2a2a/667eea?text=${encodeURIComponent(item.title)}'">
             <div class="card-body">
                 <div class="card-title">${item.title}</div>
@@ -306,7 +479,7 @@ function createCard(item, pageInfo) {
                     <span class="status-badge ${statusClass}">${item.status}</span>
                     <span class="score-display">★ ${item.score || '-'}</span>
                 </div>
-                <div class="card-actions">
+                <div class="card-actions" onclick="event.stopPropagation()">
                     <select onchange="updateStatus('${pageInfo.key}', ${item.mal_id}, this.value)">
                         ${statusOptions.map(s => `<option value="${s}" ${item.status === s ? 'selected' : ''}>${s}</option>`).join('')}
                     </select>
@@ -315,8 +488,7 @@ function createCard(item, pageInfo) {
                         ${[1,2,3,4,5,6,7,8,9,10].map(n => `<option value="${n}" ${item.score === n ? 'selected' : ''}>${n}</option>`).join('')}
                     </select>
                 </div>
-                <button class="btn btn-danger" style="width:100%; margin-top:0.5rem;" onclick="removeFromList('${pageInfo.key}', ${item.mal_id})">Delete</button>
-                <button class="btn btn-primary" style="width:100%; margin-top:0.5rem;" onclick="showComments(${item.mal_id}, '${pageInfo.type}')">💬 Comments</button>
+                <button class="btn btn-danger" style="width:100%; margin-top:0.5rem;" onclick="event.stopPropagation(); removeFromList('${pageInfo.key}', ${item.mal_id})">Delete</button>
             </div>
         </div>
     `;
@@ -352,50 +524,242 @@ function renderList() {
 }
 
 // ============================================
-// COMMENTS (Firestore)
+// DETAIL MODAL
 // ============================================
 
-async function showComments(malId, type) {
-    closeCommentsModal();
+async function openDetailModal(malId, type) {
+    const pageInfo = getPageKey();
+    const list = loadList(pageInfo.key);
+    const item = list.find(i => i.mal_id === malId);
+    if (!item) return;
+    
+    currentDetailItem = item;
+    currentDetailType = type;
     
     const modal = document.createElement('div');
-    modal.id = 'comments-modal';
-    modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:2000; display:flex; align-items:center; justify-content:center;';
+    modal.id = 'detail-modal';
+    modal.className = 'detail-modal';
     
     modal.innerHTML = `
-        <div id="comments-content" style="background:#1a1a1a; border:1px solid #333; border-radius:12px; padding:2rem; max-width:500px; width:90%; max-height:80vh; overflow-y:auto; position:relative;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-                <h2 style="color:#fff;">Comments</h2>
-                <button id="close-comments-btn" style="background:none; border:none; color:#666; font-size:1.5rem; cursor:pointer;">×</button>
+        <div class="detail-content">
+            <button class="close-detail" onclick="closeDetailModal()">×</button>
+            
+            <div class="detail-left">
+                <img src="${item.image_url}" alt="${item.title}" class="detail-image-large" onerror="this.src='https://via.placeholder.com/300x420/2a2a2a/667eea?text=${encodeURIComponent(item.title)}'">
+                <div class="community-only">
+                    <div class="rating-header">
+                        <span>Your Rating</span>
+                    </div>
+                    <div class="star-rating-input" id="user-star-rating">
+                        <button class="star-input" data-rating="1">★</button>
+                        <button class="star-input" data-rating="2">★</button>
+                        <button class="star-input" data-rating="3">★</button>
+                        <button class="star-input" data-rating="4">★</button>
+                        <button class="star-input" data-rating="5">★</button>
+                    </div>
+                    <button id="submit-rating-btn" class="btn btn-primary" style="display:none;">Submit Rating</button>
+                </div>
             </div>
-            <div id="comments-list" style="margin-bottom:1rem;"></div>
-            <div style="display:flex; gap:0.5rem;">
-                <input type="text" id="comment-input" placeholder="Add a comment..." style="flex:1; padding:0.75rem; background:#0a0a0a; border:1px solid #333; border-radius:8px; color:#e0e0e0;">
-                <button id="post-comment-btn" class="btn btn-primary">Post</button>
+            
+            <div class="detail-right">
+                <h2>${item.title}</h2>
+                <div class="detail-meta-info">
+                    <span class="status-badge ${getStatusClass(item.status)}">${item.status}</span>
+                    <span>Your Score: ★ ${item.score || 'Not rated'}</span>
+                </div>
+                
+                <div class="community-only">
+                    <div class="community-rating">
+                        <div class="rating-header">
+                            <span>Community Rating</span>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:1rem;">
+                            <span class="rating-stars" id="community-stars">★★★★★</span>
+                            <div>
+                                <div class="rating-score" id="community-score">0.0</div>
+                                <div class="rating-count" id="community-count">0 ratings</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="recommendations" class="recommendations" style="display:none;">
+                        <h3>Because you rated this, you might like:</h3>
+                        <div id="rec-list" class="list-grid"></div>
+                    </div>
+                    
+                    <div class="comments-section">
+                        <h3>Comments</h3>
+                        <div id="detail-comments-list"></div>
+                        <div class="comment-input-area">
+                            <input type="text" id="detail-comment-input" placeholder="Add a comment...">
+                            <button id="detail-post-comment" class="btn btn-primary">Post</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     `;
     
     document.body.appendChild(modal);
     
-    document.getElementById('close-comments-btn').addEventListener('click', closeCommentsModal);
-    document.getElementById('post-comment-btn').addEventListener('click', () => addComment(malId, type));
+    // Setup star rating
+    setupStarRating();
     
+    // Load community data
+    await loadCommunityData(malId, type);
+    
+    // Setup comment posting
+    setTimeout(() => {
+        const postBtn = document.getElementById('detail-post-comment');
+        if (postBtn) postBtn.addEventListener('click', () => postDetailComment(malId, type));
+    }, 0);
+    
+    // Close on background click
     modal.addEventListener('click', (e) => {
-        if (e.target === modal) closeCommentsModal();
+        if (e.target === modal) closeDetailModal();
     });
     
-    loadComments(malId, type);
+    // Update based on mode
+    updateDetailModal();
 }
 
-function closeCommentsModal() {
-    const modal = document.getElementById('comments-modal');
+function closeDetailModal() {
+    const modal = document.getElementById('detail-modal');
     if (modal) modal.remove();
+    currentDetailItem = null;
+    currentDetailType = null;
 }
 
-async function loadComments(malId, type) {
-    const list = document.getElementById('comments-list');
-    list.innerHTML = '<p style="color:#666;">Loading...</p>';
+function updateDetailModal() {
+    const modal = document.getElementById('detail-modal');
+    if (!modal) return;
+    
+    const communitySections = modal.querySelectorAll('.community-only');
+    communitySections.forEach(section => {
+        section.style.display = appMode === 'community' ? 'block' : 'none';
+    });
+}
+
+function setupStarRating() {
+    const stars = document.querySelectorAll('.star-input');
+    let selectedRating = 0;
+    
+    stars.forEach(star => {
+        star.addEventListener('click', () => {
+            selectedRating = parseInt(star.dataset.rating);
+            stars.forEach((s, index) => {
+                if (index < selectedRating) {
+                    s.classList.add('active');
+                } else {
+                    s.classList.remove('active');
+                }
+            });
+            document.getElementById('submit-rating-btn').style.display = 'block';
+        });
+    });
+    
+    const submitBtn = document.getElementById('submit-rating-btn');
+    if (submitBtn) {
+        submitBtn.addEventListener('click', async () => {
+            if (!currentUser) {
+                showToast('Login to rate');
+                return;
+            }
+            if (selectedRating === 0) return;
+            
+            await submitRating(currentDetailItem.mal_id, currentDetailType, selectedRating);
+            document.getElementById('submit-rating-btn').style.display = 'none';
+        });
+    }
+}
+
+async function loadCommunityData(malId, type) {
+    if (appMode !== 'community') return;
+    
+    // Load average rating
+    try {
+        const ratingsSnapshot = await db.collection('ratings')
+            .where('malId', '==', malId.toString())
+            .where('type', '==', type)
+            .get();
+        
+        if (!ratingsSnapshot.empty) {
+            let total = 0;
+            ratingsSnapshot.forEach(doc => total += doc.data().rating);
+            const avg = (total / ratingsSnapshot.size).toFixed(1);
+            
+            document.getElementById('community-score').textContent = avg;
+            document.getElementById('community-count').textContent = ratingsSnapshot.size + ' ratings';
+            
+            // Update stars display
+            const stars = '★'.repeat(Math.round(avg)) + '☆'.repeat(5 - Math.round(avg));
+            document.getElementById('community-stars').textContent = stars;
+        }
+        
+        // Load comments
+        await loadDetailComments(malId, type);
+    } catch (err) {
+        console.error('Load community data error:', err);
+    }
+}
+
+async function submitRating(malId, type, rating) {
+    try {
+        await db.collection('ratings').add({
+            malId: malId.toString(),
+            type: type,
+            rating: rating,
+            userId: currentUser.uid,
+            username: currentUsername,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        
+        showToast('Rating submitted!');
+        await loadCommunityData(malId, type);
+        
+        // Show recommendations
+        document.getElementById('recommendations').style.display = 'block';
+        loadRecommendations(type, rating);
+    } catch (err) {
+        showToast('Failed to submit rating');
+    }
+}
+
+async function loadRecommendations(type, userRating) {
+    const recList = document.getElementById('rec-list');
+    if (!recList) return;
+    
+    // Simple recommendation: same type, highly rated by others
+    try {
+        const snapshot = await db.collection('ratings')
+            .where('type', '==', type)
+            .orderBy('rating', 'desc')
+            .limit(3)
+            .get();
+        
+        if (snapshot.empty) {
+            recList.innerHTML = '<p style="color:#666;">No recommendations yet</p>';
+            return;
+        }
+        
+        // Get unique malIds
+        const malIds = [...new Set(snapshot.docs.map(d => d.data().malId))];
+        
+        recList.innerHTML = malIds.map(id => `
+            <div style="background:#0a0a0a; border:1px solid #333; border-radius:8px; padding:1rem;">
+                <p style="color:#667eea;">Recommended ID: ${id}</p>
+            </div>
+        `).join('');
+    } catch (err) {
+        recList.innerHTML = '<p style="color:#666;">Recommendations unavailable</p>';
+    }
+}
+
+async function loadDetailComments(malId, type) {
+    const list = document.getElementById('detail-comments-list');
+    if (!list) return;
+    
+    list.innerHTML = '<p style="color:#666;">Loading comments...</p>';
     
     try {
         const snapshot = await db.collection('comments')
@@ -412,29 +776,31 @@ async function loadComments(malId, type) {
         list.innerHTML = snapshot.docs.map(doc => {
             const data = doc.data();
             return `
-                <div style="background:#0a0a0a; border:1px solid #333; border-radius:8px; padding:1rem; margin-bottom:0.5rem;">
-                    <div style="display:flex; justify-content:space-between; margin-bottom:0.5rem;">
-                        <span style="color:#667eea; font-weight:600; font-size:0.85rem;">${data.userName || 'Anonymous'}</span>
-                        <span style="color:#666; font-size:0.75rem;">${data.timestamp?.toDate().toLocaleDateString() || ''}</span>
+                <div class="comment">
+                    <div class="comment-header">
+                        <span class="comment-author">${data.username || 'Anonymous'}</span>
+                        <span class="comment-time">${data.timestamp?.toDate().toLocaleDateString() || ''}</span>
                     </div>
-                    <p style="color:#e0e0e0; margin:0;">${data.text}</p>
+                    <p class="comment-text">${data.text}</p>
+                    <div class="comment-actions">
+                        <button onclick="replyToComment('${doc.id}')">Reply</button>
+                    </div>
                 </div>
             `;
         }).join('');
     } catch (err) {
         list.innerHTML = '<p style="color:#666;">Error loading comments</p>';
-        console.error('Load comments error:', err);
     }
 }
 
-async function addComment(malId, type) {
+async function postDetailComment(malId, type) {
     if (!currentUser) {
         showToast('Please login to comment');
         showLoginModal();
         return;
     }
     
-    const input = document.getElementById('comment-input');
+    const input = document.getElementById('detail-comment-input');
     const text = input.value.trim();
     if (!text) return;
     
@@ -444,16 +810,19 @@ async function addComment(malId, type) {
             type: type,
             text: text,
             userId: currentUser.uid,
-            userName: currentUser.displayName || currentUser.email,
+            username: currentUsername || currentUser.email,
             timestamp: firebase.firestore.FieldValue.serverTimestamp()
         });
         
         input.value = '';
-        loadComments(malId, type);
+        await loadDetailComments(malId, type);
     } catch (err) {
         showToast('Failed to post comment');
-        console.error('Add comment error:', err);
     }
+}
+
+function replyToComment(commentId) {
+    showToast('Reply feature coming soon');
 }
 
 // ============================================
