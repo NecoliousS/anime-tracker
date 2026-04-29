@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Details - Tracker</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+
+    <nav class="navbar">
+        <div class="nav-brand">Tracker</div>
+        <div class="nav-links">
+            <a href="index.html">Home</a>
+            <a href="anime.html">Anime</a>
+            <a href="manga.html">Manga</a>
+            <a href="tv.html">TV Shows</a>
+            <a href="movies.html">Movies</a>
+            <a href="browse.html">Browse</a>
+        </div>
+        <div id="auth-container" style="display:flex; align-items:center; gap:0.5rem;"></div>
+    </nav>
+
+    <main class="container">
+        <div id="mode-toggle" style="display:none; margin-bottom:1rem;">
+            <div class="search-type-toggle">
+                <button class="toggle-btn active" id="mode-solo">Solo Mode</button>
+                <button class="toggle-btn" id="mode-community">Community Mode</button>
+            </div>
+        </div>
+
+        <div id="detail-content">
+            <!-- Filled by JS -->
+        </div>
+
+        <div id="community-section" style="display:none;">
+            <div class="page-header" style="margin-top:2rem;">
+                <h2>Community Ratings</h2>
+            </div>
+            
+            <div id="rating-display" style="background:#1a1a1a; border:1px solid #333; border-radius:12px; padding:1.5rem; margin-bottom:1.5rem;">
+                <div style="display:flex; align-items:center; gap:1rem;">
+                    <span style="font-size:2rem; color:#fbbf24;" id="avg-stars">★★★★★</span>
+                    <div>
+                        <div style="font-size:1.5rem; color:#fff; font-weight:700;" id="avg-score">0.0</div>
+                        <div style="color:#666; font-size:0.85rem;" id="total-raters">0 ratings</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="user-rating-section" style="background:#1a1a1a; border:1px solid #333; border-radius:12px; padding:1.5rem; margin-bottom:1.5rem;">
+                <h3 style="color:#fff; margin-bottom:1rem;">Rate this</h3>
+                <div style="display:flex; gap:0.5rem; margin-bottom:1rem;">
+                    <button class="star-btn" data-rating="1">★</button>
+                    <button class="star-btn" data-rating="2">★</button>
+                    <button class="star-btn" data-rating="3">★</button>
+                    <button class="star-btn" data-rating="4">★</button>
+                    <button class="star-btn" data-rating="5">★</button>
+                </div>
+                <button id="submit-rating" class="btn btn-primary" style="display:none;">Submit Rating</button>
+                <div id="recommendations" style="display:none; margin-top:1.5rem;">
+                    <h3 style="color:#667eea; margin-bottom:1rem;">Because you rated this, you might like:</h3>
+                    <div id="rec-list" class="list-grid"></div>
+                </div>
+            </div>
+
+            <div class="page-header">
+                <h2>Comments</h2>
+            </div>
+            
+            <div id="comments-section" style="background:#1a1a1a; border:1px solid #333; border-radius:12px; padding:1.5rem;">
+                <div id="comments-list" style="margin-bottom:1rem;"></div>
+                <div style="display:flex; gap:0.5rem;">
+                    <input type="text" id="comment-input" placeholder="Add a comment..." style="flex:1; padding:0.75rem; background:#0a0a0a; border:1px solid #333; border-radius:8px; color:#e0e0e0;">
+                    <button id="post-comment-btn" class="btn btn-primary">Post</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
