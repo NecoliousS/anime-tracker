@@ -1,5 +1,24 @@
 // ============================================
-// LOCALSTORAGE KEYS
+// FIREBASE CONFIG
+// ============================================
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBJdMh4KAScijprkAvLtYos-8e8wvMkh00",
+  authDomain: "media-tracker-6b815.firebaseapp.com",
+  projectId: "media-tracker-6b815",
+  storageBucket: "media-tracker-6b815.firebasestorage.app",
+  messagingSenderId: "925225760281",
+  appId: "1:925225760281:web:8dedd870eead7dc43cdc88",
+  measurementId: "G-DY6SQ0CPT8"
+};
+
+// Initialize Firebase
+const app = firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+// ============================================
+// LOCALSTORAGE KEYS (fallback when not logged in)
 // ============================================
 
 const ANIME_KEY = 'tracker_anime';
@@ -7,18 +26,138 @@ const MANGA_KEY = 'tracker_manga';
 const TV_KEY = 'tracker_tv';
 const MOVIES_KEY = 'tracker_movies';
 
-// Map page to key
-function getPageKey() {
-    const path = window.location.pathname;
-    if (path.includes('anime.html')) return { key: ANIME_KEY, type: 'anime', defaultStatus: 'Plan to Watch' };
-    if (path.includes('manga.html')) return { key: MANGA_KEY, type: 'manga', defaultStatus: 'Plan to Read' };
-    if (path.includes('tv.html')) return { key: TV_KEY, type: 'tv', defaultStatus: 'Plan to Watch' };
-    if (path.includes('movies.html')) return { key: MOVIES_KEY, type: 'movies', defaultStatus: 'Plan to Watch' };
-    return null;
+let currentUser = null;
+
+// ============================================
+// AUTH STATE LISTENER
+// ============================================
+
+auth.onAuthStateChanged((user) => {
+    currentUser = user;
+    updateAuthUI();
+    if (user) {
+        loadUserData();
+    } else {
+        renderList();
+    }
+});
+
+function updateAuthUI() {
+    const authContainer = document.getElementById('auth-container');
+    if (!authContainer) return;
+    
+    if (currentUser) {
+        authContainer.innerHTML = `
+            <span style="color:#a0a0a0; font-size:0.85rem;">${currentUser.email || currentUser.displayName}</span>
+            <button class="btn btn-danger" style="padding:0.4rem 0.8rem; font-size:0.8rem;" onclick="logout()">Logout</button>
+        `;
+    } else {
+        authContainer.innerHTML = `
+            <button class="btn btn-primary" style="padding:0.4rem 0.8rem; font-size:0.8rem;" onclick="showLoginModal()">Login</button>
+        `;
+    }
 }
 
 // ============================================
-// LOAD / SAVE
+// LOGIN / LOGOUT
+// ============================================
+
+function showLoginModal() {
+    const modal = document.createElement('div');
+    modal.id = 'login-modal';
+    modal.innerHTML = `
+        <div style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:2000; display:flex; align-items:center; justify-content:center;">
+            <div style="background:#1a1a1a; border:1px solid #333; border-radius:12px; padding:2rem; max-width:400px; width:90%;">
+                <h2 style="margin-bottom:1.5rem; color:#fff;">Login</h2>
+                
+                <button onclick="loginWithGoogle()" style="width:100%; padding:0.75rem; background:#4285f4; color:white; border:none; border-radius:8px; cursor:pointer; margin-bottom:1rem; font-weight:600;">
+                    Sign in with Google
+                </button>
+                
+                <div style="text-align:center; color:#666; margin:1rem 0;">or</div>
+                
+                <input type="email" id="login-email" placeholder="Email" style="width:100%; padding:0.75rem; background:#0a0a0a; border:1px solid #333; border-radius:8px; color:#e0e0e0; margin-bottom:0.5rem;">
+                <input type="password" id="login-password" placeholder="Password" style="width:100%; padding:0.75rem; background:#0a0a0a; border:1px solid #333; border-radius:8px; color:#e0e0e0; margin-bottom:1rem;">
+                
+                <button onclick="loginWithEmail()" style="width:100%; padding:0.75rem; background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); color:white; border:none; border-radius:8px; cursor:pointer; margin-bottom:0.5rem; font-weight:600;">
+                    Sign In
+                </button>
+                <button onclick="signupWithEmail()" style="width:100%; padding:0.75rem; background:transparent; color:#667eea; border:1px solid #667eea; border-radius:8px; cursor:pointer; font-weight:600;">
+                    Create Account
+                </button>
+                
+                <button onclick="closeLoginModal()" style="position:absolute; top:1rem; right:1rem; background:none; border:none; color:#666; font-size:1.5rem; cursor:pointer;">×</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+function closeLoginModal() {
+    const modal = document.getElementById('login-modal');
+    if (modal) modal.remove();
+}
+
+function loginWithGoogle() {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    auth.signInWithPopup(provider).catch(err => {
+        showToast(err.message);
+    });
+}
+
+function loginWithEmail() {
+    const email = document.getElementById('login-email').value;
+    const password = document.getElementById('login-password').value;
+    auth.signInWithEmailAndPassword(email, password)
+        .then(() => closeLoginModal())
+        .catch(err => showToast(err.message));
+}
+
+function signupWithEmail() {
+    const email = document.getElementById('login-email').value;
+    const password = document.getElementById('login-password').value;
+    auth.createUserWithEmailAndPassword(email, password)
+        .then(() => closeLoginModal())
+        .catch(err => showToast(err.message));
+}
+
+function logout() {
+    auth.signOut();
+    showToast('Logged out');
+}
+
+// ============================================
+// USER DATA (Firestore)
+// ============================================
+
+async function loadUserData() {
+    if (!currentUser) return;
+    
+    const doc = await db.collection('users').doc(currentUser.uid).get();
+    if (doc.exists) {
+        const data = doc.data();
+        if (data.anime) localStorage.setItem(ANIME_KEY, JSON.stringify(data.anime));
+        if (data.manga) localStorage.setItem(MANGA_KEY, JSON.stringify(data.manga));
+        if (data.tv) localStorage.setItem(TV_KEY, JSON.stringify(data.tv));
+        if (data.movies) localStorage.setItem(MOVIES_KEY, JSON.stringify(data.movies));
+    }
+    renderList();
+}
+
+async function saveUserData() {
+    if (!currentUser) return;
+    
+    await db.collection('users').doc(currentUser.uid).set({
+        anime: JSON.parse(localStorage.getItem(ANIME_KEY) || '[]'),
+        manga: JSON.parse(localStorage.getItem(MANGA_KEY) || '[]'),
+        tv: JSON.parse(localStorage.getItem(TV_KEY) || '[]'),
+        movies: JSON.parse(localStorage.getItem(MOVIES_KEY) || '[]'),
+        lastUpdated: new Date()
+    });
+}
+
+// ============================================
+// LOCALSTORAGE WRAPPER (auto-syncs to Firestore)
 // ============================================
 
 function loadList(key) {
@@ -28,6 +167,16 @@ function loadList(key) {
 
 function saveList(key, list) {
     localStorage.setItem(key, JSON.stringify(list));
+    saveUserData(); // Sync to cloud
+}
+
+function getPageKey() {
+    const path = window.location.pathname;
+    if (path.includes('anime.html')) return { key: ANIME_KEY, type: 'anime', defaultStatus: 'Plan to Watch' };
+    if (path.includes('manga.html')) return { key: MANGA_KEY, type: 'manga', defaultStatus: 'Plan to Read' };
+    if (path.includes('tv.html')) return { key: TV_KEY, type: 'tv', defaultStatus: 'Plan to Watch' };
+    if (path.includes('movies.html')) return { key: MOVIES_KEY, type: 'movies', defaultStatus: 'Plan to Watch' };
+    return null;
 }
 
 // ============================================
@@ -102,6 +251,7 @@ function createCard(item, pageInfo) {
                     </select>
                 </div>
                 <button class="btn btn-danger" style="width:100%; margin-top:0.5rem;" onclick="removeFromList('${pageInfo.key}', ${item.mal_id})">Delete</button>
+                <button class="btn btn-primary" style="width:100%; margin-top:0.5rem;" onclick="showComments(${item.mal_id}, '${pageInfo.type}')">💬 Comments</button>
             </div>
         </div>
     `;
@@ -134,6 +284,91 @@ function renderList() {
         if (emptyState) emptyState.classList.add('hidden');
         if (container) container.innerHTML = filtered.map(item => createCard(item, pageInfo)).join('');
     }
+}
+
+// ============================================
+// COMMENTS (Firestore)
+// ============================================
+
+async function showComments(malId, type) {
+    const modal = document.createElement('div');
+    modal.id = 'comments-modal';
+    modal.innerHTML = `
+        <div style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:2000; display:flex; align-items:center; justify-content:center;">
+            <div style="background:#1a1a1a; border:1px solid #333; border-radius:12px; padding:2rem; max-width:500px; width:90%; max-height:80vh; overflow-y:auto;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                    <h2 style="color:#fff;">Comments</h2>
+                    <button onclick="closeCommentsModal()" style="background:none; border:none; color:#666; font-size:1.5rem; cursor:pointer;">×</button>
+                </div>
+                <div id="comments-list" style="margin-bottom:1rem;"></div>
+                <div style="display:flex; gap:0.5rem;">
+                    <input type="text" id="comment-input" placeholder="Add a comment..." style="flex:1; padding:0.75rem; background:#0a0a0a; border:1px solid #333; border-radius:8px; color:#e0e0e0;">
+                    <button onclick="addComment(${malId}, '${type}')" class="btn btn-primary">Post</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    
+    loadComments(malId, type);
+}
+
+function closeCommentsModal() {
+    const modal = document.getElementById('comments-modal');
+    if (modal) modal.remove();
+}
+
+async function loadComments(malId, type) {
+    const list = document.getElementById('comments-list');
+    list.innerHTML = '<p style="color:#666;">Loading...</p>';
+    
+    const snapshot = await db.collection('comments')
+        .where('malId', '==', malId.toString())
+        .where('type', '==', type)
+        .orderBy('timestamp', 'desc')
+        .get();
+    
+    if (snapshot.empty) {
+        list.innerHTML = '<p style="color:#666;">No comments yet. Be the first!</p>';
+        return;
+    }
+    
+    list.innerHTML = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return `
+            <div style="background:#0a0a0a; border:1px solid #333; border-radius:8px; padding:1rem; margin-bottom:0.5rem;">
+                <div style="display:flex; justify-content:space-between; margin-bottom:0.5rem;">
+                    <span style="color:#667eea; font-weight:600; font-size:0.85rem;">${data.userName || 'Anonymous'}</span>
+                    <span style="color:#666; font-size:0.75rem;">${data.timestamp?.toDate().toLocaleDateString() || ''}</span>
+                </div>
+                <p style="color:#e0e0e0; margin:0;">${data.text}</p>
+            </div>
+        `;
+    }).join('');
+}
+
+async function addComment(malId, type) {
+    if (!currentUser) {
+        showToast('Please login to comment');
+        showLoginModal();
+        return;
+    }
+    
+    const input = document.getElementById('comment-input');
+    const text = input.value.trim();
+    if (!text) return;
+    
+    await db.collection('comments').add({
+        malId: malId.toString(),
+        type: type,
+        text: text,
+        userId: currentUser.uid,
+        userName: currentUser.displayName || currentUser.email,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    
+    input.value = '';
+    loadComments(malId, type);
 }
 
 // ============================================
@@ -217,7 +452,6 @@ async function performSearch() {
     noResults.classList.add('hidden');
     loading.classList.remove('hidden');
     
-    // Anime and Manga use Jikan API
     if (currentSearchType === 'anime' || currentSearchType === 'manga') {
         try {
             const response = await fetch(`https://api.jikan.moe/v4/${currentSearchType}?q=${encodeURIComponent(query)}&limit=24`);
@@ -237,12 +471,8 @@ async function performSearch() {
             showToast('Search failed. Try again.');
             console.error(error);
         }
-    } 
-    // TV Shows and Movies use OMDb API
-    else {
+    } else {
         try {
-            // OMDb API - free tier, no key needed for basic poster search
-            // Using a demo key approach - if it fails, we fall back to manual
             const searchUrl = `https://www.omdbapi.com/?s=${encodeURIComponent(query)}&type=${currentSearchType === 'tv' ? 'series' : 'movie'}&apikey=thewdb`;
             
             const response = await fetch(searchUrl);
@@ -251,7 +481,6 @@ async function performSearch() {
             loading.classList.add('hidden');
             
             if (data.Response === 'False' || !data.Search || data.Search.length === 0) {
-                // Fallback: show manual entry option
                 showManualEntry(query, resultsContainer);
                 return;
             }
@@ -260,7 +489,6 @@ async function performSearch() {
             
         } catch (error) {
             loading.classList.add('hidden');
-            // Fallback on error
             showManualEntry(query, resultsContainer);
         }
     }
