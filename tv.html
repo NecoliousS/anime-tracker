@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My TV Shows - Anime Tracker</title>
+    <title>My TV Shows - Tracker</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -20,6 +20,7 @@
             <a href="movies.html">Movies</a>
             <a href="browse.html">Browse</a>
         </div>
+        <div id="auth-container" style="display:flex; align-items:center; gap:0.5rem;"></div>
     </nav>
 
     <main class="container">
@@ -45,6 +46,9 @@
 
     <div id="toast" class="toast hidden"></div>
 
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
