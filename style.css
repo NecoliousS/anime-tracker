@@ -303,6 +303,7 @@ body {
     overflow: hidden;
     transition: all 0.3s;
     position: relative;
+    cursor: pointer;
 }
 
 .card:hover {
@@ -517,6 +518,261 @@ body {
 }
 
 /* ============================================
+   MODE TOGGLE
+   ============================================ */
+
+#mode-toggle {
+    text-align: center;
+    margin-bottom: 1.5rem;
+}
+
+#mode-toggle .search-type-toggle {
+    justify-content: center;
+}
+
+/* ============================================
+   DETAIL MODAL (POPUP)
+   ============================================ */
+
+.detail-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.9);
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+}
+
+.detail-content {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 16px;
+    max-width: 900px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    position: relative;
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    gap: 2rem;
+    padding: 2rem;
+}
+
+.detail-left {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.detail-image-large {
+    width: 100%;
+    height: 420px;
+    object-fit: cover;
+    border-radius: 12px;
+    border: 1px solid #333;
+}
+
+.detail-right {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.detail-right h2 {
+    font-size: 1.8rem;
+    color: #fff;
+    margin: 0;
+}
+
+.detail-meta-info {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.detail-meta-info span {
+    background: #0a0a0a;
+    border: 1px solid #333;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    color: #a0a0a0;
+    font-size: 0.9rem;
+}
+
+/* Community Rating Display */
+.community-rating {
+    background: #0a0a0a;
+    border: 1px solid #333;
+    border-radius: 12px;
+    padding: 1.5rem;
+}
+
+.rating-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.rating-stars {
+    font-size: 1.5rem;
+    color: #fbbf24;
+}
+
+.rating-score {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #fff;
+}
+
+.rating-count {
+    color: #666;
+    font-size: 0.9rem;
+}
+
+/* Star Rating Input */
+.star-rating-input {
+    display: flex;
+    gap: 0.5rem;
+    margin: 1rem 0;
+}
+
+.star-input {
+    background: none;
+    border: none;
+    font-size: 2rem;
+    color: #333;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.star-input:hover,
+.star-input.active {
+    color: #fbbf24;
+}
+
+/* Recommendations */
+.recommendations {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #333;
+}
+
+.recommendations h3 {
+    color: #667eea;
+    margin-bottom: 1rem;
+}
+
+/* Comments Section */
+.comments-section {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #333;
+}
+
+.comments-section h3 {
+    color: #fff;
+    margin-bottom: 1rem;
+}
+
+.comment {
+    background: #0a0a0a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+}
+
+.comment-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+}
+
+.comment-author {
+    color: #667eea;
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+
+.comment-time {
+    color: #666;
+    font-size: 0.75rem;
+}
+
+.comment-text {
+    color: #e0e0e0;
+    margin: 0;
+}
+
+.comment-actions {
+    display: flex;
+    gap: 1rem;
+    margin-top: 0.5rem;
+}
+
+.comment-actions button {
+    background: none;
+    border: none;
+    color: #667eea;
+    cursor: pointer;
+    font-size: 0.8rem;
+}
+
+.reply-form {
+    margin-top: 0.5rem;
+    padding-left: 1rem;
+    border-left: 2px solid #333;
+}
+
+.reply {
+    margin-left: 2rem;
+    margin-top: 0.5rem;
+}
+
+.comment-input-area {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+
+.comment-input-area input {
+    flex: 1;
+    padding: 0.75rem;
+    background: #0a0a0a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    color: #e0e0e0;
+}
+
+/* Close button */
+.close-detail {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    background: none;
+    border: none;
+    color: #666;
+    font-size: 1.5rem;
+    cursor: pointer;
+    z-index: 10;
+}
+
+.close-detail:hover {
+    color: #fff;
+}
+
+/* Solo mode hide community */
+.solo-mode .community-only {
+    display: none !important;
+}
+
+/* ============================================
    MOBILE RESPONSIVE
    ============================================ */
 
@@ -562,6 +818,15 @@ body {
 
     .orb {
         display: none;
+    }
+
+    .detail-content {
+        grid-template-columns: 1fr;
+        padding: 1rem;
+    }
+
+    .detail-image-large {
+        height: 300px;
     }
 }
 
