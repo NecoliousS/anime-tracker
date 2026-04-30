@@ -25,7 +25,7 @@ const MANGA_KEY = 'tracker_manga';
 const TV_KEY = 'tracker_tv';
 const MOVIES_KEY = 'tracker_movies';
 
-const BANNED_USERNAMES = ['Zer0H20', 'Nik0H20', 'Zer0', 'Nik0', 'niko', 'zero', 'H20'];
+const BANNED_USERNAMES = ['Zer0H20', 'Zer0', 'Nik0', 'niko', 'zero', 'H20'];
 const PROFANITY_LIST = ['fuck', 'shit', 'bitch', 'nigger', 'nigga', 'fag', 'retard', 'cunt', 'whore', 'slut', 'chink', 'kike', 'dyke', 'tranny', 'spic', 'wetback', 'coon', 'jigaboo', 'raghead', 'towelhead', 'cameljockey'];
 
 let currentUser = null;
