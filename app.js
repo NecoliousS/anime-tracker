@@ -16,6 +16,9 @@ firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
 
+// reCAPTCHA verifier for phone auth (invisible)
+let recaptchaVerifier = null;
+
 // ============================================
 // CONSTANTS
 // ============================================
@@ -44,6 +47,12 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+function isValidEmail(email) {
+    // Basic regex for real email format
+    const re = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    return re.test(email);
 }
 
 // ============================================
@@ -137,13 +146,14 @@ async function loadUsername() {
 function showUsernameModal(isChanging = false) {
     closeLoginModal();
     closeChangeUsernameModal();
+    closeUsernameModal();
 
     const modal = document.createElement('div');
     modal.id = 'username-modal';
     modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:2000; display:flex; align-items:center; justify-content:center;';
 
     const title = isChanging ? 'Change Your Username' : 'Choose Your Username';
-    const subtitle = isChanging ? 'You can change again in 5 minutes' : 'This will be visible to other users';
+    const subtitle = isChanging ? 'You can change again in 5 minutes' : 'This will be visible to other users. You cannot change it later.';
     const btnText = isChanging ? 'Update Username' : 'Save Username';
 
     modal.innerHTML = `
@@ -371,6 +381,10 @@ function showLoginModal() {
                 Sign in with Google
             </button>
             
+            <button id="phone-login-btn" style="width:100%; padding:0.75rem; background:#34a853; color:white; border:none; border-radius:8px; cursor:pointer; margin-bottom:1rem; font-weight:600;">
+                Sign in with Phone
+            </button>
+            
             <div style="text-align:center; color:#666; margin:1rem 0;">or</div>
             
             <input type="email" id="login-email" placeholder="Email" style="width:100%; padding:0.75rem; background:#0a0a0a; border:1px solid #333; border-radius:8px; color:#e0e0e0; margin-bottom:0.5rem;">
@@ -392,6 +406,7 @@ function showLoginModal() {
     setTimeout(() => {
         document.getElementById('close-modal-btn').addEventListener('click', closeLoginModal);
         document.getElementById('google-login-btn').addEventListener('click', loginWithGoogle);
+        document.getElementById('phone-login-btn').addEventListener('click', showPhoneLogin);
         document.getElementById('email-login-btn').addEventListener('click', loginWithEmail);
         document.getElementById('signup-btn').addEventListener('click', signupWithEmail);
     }, 0);
@@ -405,6 +420,10 @@ function closeLoginModal() {
     const modal = document.getElementById('login-modal');
     if (modal) modal.remove();
 }
+
+// ============================================
+// GOOGLE LOGIN
+// ============================================
 
 function loginWithGoogle() {
     const provider = new firebase.auth.GoogleAuthProvider();
@@ -425,12 +444,21 @@ function loginWithGoogle() {
         });
 }
 
+// ============================================
+// EMAIL LOGIN
+// ============================================
+
 function loginWithEmail() {
     const email = document.getElementById('login-email').value.trim();
     const password = document.getElementById('login-password').value;
 
     if (!email || !password) {
         showToast('Please enter email and password');
+        return;
+    }
+
+    if (!isValidEmail(email)) {
+        showToast('Please enter a valid email address');
         return;
     }
 
@@ -460,20 +488,188 @@ function signupWithEmail() {
         return;
     }
 
+    if (!isValidEmail(email)) {
+        showToast('Please enter a valid email address');
+        return;
+    }
+
     if (password.length < 6) {
         showToast('Password must be at least 6 characters');
         return;
     }
 
     auth.createUserWithEmailAndPassword(email, password)
-        .then(() => {
+        .then(async (result) => {
+            // Send verification email
+            try {
+                await result.user.sendEmailVerification();
+                showToast('Verification email sent! Check your inbox.');
+            } catch (verifyErr) {
+                console.error('Verification email error:', verifyErr);
+            }
             closeLoginModal();
-            showUsernameModal(false);
+            setTimeout(() => {
+                showUsernameModal(false);
+            }, 100);
         })
         .catch(err => {
             showToast('Sign up failed: ' + err.message);
+            console.error('Signup error:', err);
         });
 }
+
+// ============================================
+// PHONE LOGIN
+// ============================================
+
+function showPhoneLogin() {
+    closeLoginModal();
+
+    const modal = document.createElement('div');
+    modal.id = 'phone-modal';
+    modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:2000; display:flex; align-items:center; justify-content:center;';
+
+    modal.innerHTML = `
+        <div style="background:#1a1a1a; border:1px solid #333; border-radius:12px; padding:2rem; max-width:400px; width:90%; position:relative;">
+            <h2 style="margin-bottom:1.5rem; color:#fff;">Phone Sign In</h2>
+            <p style="color:#666; margin-bottom:1rem; font-size:0.85rem;">Enter your phone number with country code (e.g. +1 555 123 4567)</p>
+            
+            <input type="tel" id="phone-input" placeholder="+1 555 123 4567" style="width:100%; padding:0.75rem; background:#0a0a0a; border:1px solid #333; border-radius:8px; color:#e0e0e0; margin-bottom:1rem;">
+            
+            <div id="phone-error" style="color:#ef4444; font-size:0.85rem; margin-bottom:1rem; display:none;"></div>
+            
+            <div id="recaptcha-container" style="margin-bottom:1rem;"></div>
+            
+            <button id="send-code-btn" style="width:100%; padding:0.75rem; background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); color:white; border:none; border-radius:8px; cursor:pointer; margin-bottom:0.5rem; font-weight:600;">
+                Send Code
+            </button>
+            
+            <div id="code-section" style="display:none;">
+                <input type="text" id="code-input" placeholder="Enter 6-digit code" maxlength="6" style="width:100%; padding:0.75rem; background:#0a0a0a; border:1px solid #333; border-radius:8px; color:#e0e0e0; margin-bottom:1rem; text-align:center;">
+                <button id="verify-code-btn" style="width:100%; padding:0.75rem; background:#34a853; color:white; border:none; border-radius:8px; cursor:pointer; font-weight:600;">
+                    Verify Code
+                </button>
+            </div>
+            
+            <button id="back-to-login-btn" style="width:100%; padding:0.75rem; background:transparent; color:#666; border:1px solid #333; border-radius:8px; cursor:pointer; margin-top:0.5rem;">
+                Back to Login
+            </button>
+            
+            <button id="close-phone-btn" style="position:absolute; top:1rem; right:1rem; background:none; border:none; color:#666; font-size:1.5rem; cursor:pointer;">×</button>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    setTimeout(() => {
+        document.getElementById('close-phone-btn').addEventListener('click', closePhoneModal);
+        document.getElementById('back-to-login-btn').addEventListener('click', () => {
+            closePhoneModal();
+            showLoginModal();
+        });
+        document.getElementById('send-code-btn').addEventListener('click', sendPhoneCode);
+        document.getElementById('verify-code-btn').addEventListener('click', verifyPhoneCode);
+
+        // Setup invisible reCAPTCHA
+        if (!recaptchaVerifier) {
+            recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
+                size: 'invisible',
+                callback: (response) => {
+                    // reCAPTCHA solved
+                }
+            });
+        }
+    }, 0);
+
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closePhoneModal();
+    });
+}
+
+function closePhoneModal() {
+    const modal = document.getElementById('phone-modal');
+    if (modal) modal.remove();
+}
+
+let confirmationResult = null;
+
+function sendPhoneCode() {
+    const phoneInput = document.getElementById('phone-input');
+    const errorDiv = document.getElementById('phone-error');
+    const phoneNumber = phoneInput.value.trim();
+
+    if (!phoneNumber) {
+        errorDiv.textContent = 'Enter a phone number';
+        errorDiv.style.display = 'block';
+        return;
+    }
+
+    // Basic validation: must start with + and have digits
+    if (!phoneNumber.match(/^\+[1-9]\d{1,14}$/)) {
+        errorDiv.textContent = 'Enter valid number with country code (e.g. +15551234567)';
+        errorDiv.style.display = 'block';
+        return;
+    }
+
+    errorDiv.style.display = 'none';
+
+    auth.signInWithPhoneNumber(phoneNumber, recaptchaVerifier)
+        .then((result) => {
+            confirmationResult = result;
+            document.getElementById('code-section').style.display = 'block';
+            document.getElementById('send-code-btn').style.display = 'none';
+            showToast('Code sent!');
+        })
+        .catch((err) => {
+            errorDiv.textContent = 'Error: ' + err.message;
+            errorDiv.style.display = 'block';
+            console.error('Phone auth error:', err);
+            // Reset reCAPTCHA
+            if (recaptchaVerifier) {
+                recaptchaVerifier.clear();
+                recaptchaVerifier = null;
+            }
+        });
+}
+
+function verifyPhoneCode() {
+    const codeInput = document.getElementById('code-input');
+    const errorDiv = document.getElementById('phone-error');
+    const code = codeInput.value.trim();
+
+    if (!code || code.length !== 6) {
+        errorDiv.textContent = 'Enter the 6-digit code';
+        errorDiv.style.display = 'block';
+        return;
+    }
+
+    if (!confirmationResult) {
+        errorDiv.textContent = 'Request code first';
+        errorDiv.style.display = 'block';
+        return;
+    }
+
+    confirmationResult.confirm(code)
+        .then(async (result) => {
+            closePhoneModal();
+            const doc = await db.collection('usernames').doc(result.user.uid).get();
+            if (!doc.exists) {
+                showUsernameModal(false);
+            } else {
+                currentUsername = doc.data().username;
+                showToast('Signed in as ' + currentUsername);
+                updateAuthUI();
+            }
+        })
+        .catch((err) => {
+            errorDiv.textContent = 'Invalid code. Try again.';
+            errorDiv.style.display = 'block';
+        });
+}
+
+// ============================================
+// LOGOUT
+// ============================================
 
 function logout() {
     auth.signOut().then(() => {
@@ -483,7 +679,7 @@ function logout() {
 }
 
 // ============================================
-// USER DATA
+// USER DATA - SYNC TO FIRESTORE
 // ============================================
 
 async function loadUserData() {
@@ -497,6 +693,7 @@ async function loadUserData() {
             if (data.manga) localStorage.setItem(MANGA_KEY, JSON.stringify(data.manga));
             if (data.tv) localStorage.setItem(TV_KEY, JSON.stringify(data.tv));
             if (data.movies) localStorage.setItem(MOVIES_KEY, JSON.stringify(data.movies));
+            showToast('Data synced from cloud');
         }
         renderList();
     } catch (err) {
@@ -513,10 +710,12 @@ async function saveUserData() {
             manga: JSON.parse(localStorage.getItem(MANGA_KEY) || '[]'),
             tv: JSON.parse(localStorage.getItem(TV_KEY) || '[]'),
             movies: JSON.parse(localStorage.getItem(MOVIES_KEY) || '[]'),
-            lastUpdated: new Date()
+            lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
         });
+        console.log('Data saved to cloud');
     } catch (err) {
         console.error('Save user data error:', err);
+        showToast('Failed to sync to cloud');
     }
 }
 
@@ -531,6 +730,7 @@ function loadList(key) {
 
 function saveList(key, list) {
     localStorage.setItem(key, JSON.stringify(list));
+    // ALWAYS sync to Firestore immediately
     saveUserData();
 }
 
@@ -538,7 +738,6 @@ function getPageKey() {
     const path = window.location.pathname;
     const href = window.location.href;
     
-    // Check full href and pathname for maximum compatibility
     const checks = [
         path.includes('/anime.html'),
         path.endsWith('/anime.html'),
