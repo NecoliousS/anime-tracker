@@ -25,7 +25,7 @@ const MANGA_KEY = 'tracker_manga';
 const TV_KEY = 'tracker_tv';
 const MOVIES_KEY = 'tracker_movies';
 
-const BANNED_USERNAMES = ['Zer0H20', 'Zer0', 'Nik0', 'niko', 'zero', 'H20'];
+const BANNED_USERNAMES = ['Nik0H20', 'Zer0', 'Nik0', 'niko', 'zero', 'H20'];
 const PROFANITY_LIST = ['fuck', 'shit', 'bitch', 'nigger', 'nigga', 'fag', 'retard', 'cunt', 'whore', 'slut', 'chink', 'kike', 'dyke', 'tranny', 'spic', 'wetback', 'coon', 'jigaboo', 'raghead', 'towelhead', 'cameljockey'];
 
 let currentUser = null;
@@ -33,6 +33,7 @@ let currentUsername = null;
 let appMode = localStorage.getItem('tracker_mode') || 'solo';
 let currentDetailItem = null;
 let currentDetailType = null;
+let lastUsernameChange = localStorage.getItem('last_username_change') || 0;
 
 // ============================================
 // UTILS
@@ -132,25 +133,31 @@ async function loadUsername() {
 // USERNAME SYSTEM
 // ============================================
 
-function showUsernameModal() {
+function showUsernameModal(isChanging = false) {
     closeLoginModal();
+    closeChangeUsernameModal();
     
     const modal = document.createElement('div');
     modal.id = 'username-modal';
     modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:2000; display:flex; align-items:center; justify-content:center;';
     
+    const title = isChanging ? 'Change Your Username' : 'Choose Your Username';
+    const subtitle = isChanging ? 'You can change again in 5 minutes' : 'This will be visible to other users';
+    const btnText = isChanging ? 'Update Username' : 'Save Username';
+    
     modal.innerHTML = `
         <div style="background:#1a1a1a; border:1px solid #333; border-radius:12px; padding:2rem; max-width:400px; width:90%; text-align:center;">
-            <h2 style="color:#fff; margin-bottom:0.5rem;">Choose Your Username</h2>
-            <p style="color:#666; margin-bottom:1.5rem;">This will be visible to other users. You cannot change it later.</p>
+            <h2 style="color:#fff; margin-bottom:0.5rem;">${title}</h2>
+            <p style="color:#666; margin-bottom:1.5rem;">${subtitle}</p>
             
             <input type="text" id="username-input" placeholder="Enter username..." maxlength="20" style="width:100%; padding:0.75rem; background:#0a0a0a; border:1px solid #333; border-radius:8px; color:#e0e0e0; margin-bottom:1rem; text-align:center;">
             
             <div id="username-error" style="color:#ef4444; font-size:0.85rem; margin-bottom:1rem; display:none;"></div>
             
             <button id="save-username-btn" style="width:100%; padding:0.75rem; background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); color:white; border:none; border-radius:8px; cursor:pointer; font-weight:600;">
-                Save Username
+                ${btnText}
             </button>
+            ${isChanging ? '<button id="cancel-username-btn" style="width:100%; padding:0.75rem; background:transparent; color:#666; border:1px solid #333; border-radius:8px; cursor:pointer; margin-top:0.5rem;">Cancel</button>' : ''}
         </div>
     `;
     
@@ -158,20 +165,22 @@ function showUsernameModal() {
     
     setTimeout(() => {
         const saveBtn = document.getElementById('save-username-btn');
-        if (saveBtn) saveBtn.addEventListener('click', saveUsername);
+        if (saveBtn) saveBtn.addEventListener('click', () => saveUsername(isChanging));
         
-        // Allow Enter key
+        const cancelBtn = document.getElementById('cancel-username-btn');
+        if (cancelBtn) cancelBtn.addEventListener('click', closeUsernameModal);
+        
         const input = document.getElementById('username-input');
         if (input) {
             input.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') saveUsername();
+                if (e.key === 'Enter') saveUsername(isChanging);
             });
             input.focus();
         }
     }, 0);
 }
 
-async function saveUsername() {
+async function saveUsername(isChanging = false) {
     const input = document.getElementById('username-input');
     const errorDiv = document.getElementById('username-error');
     const username = input.value.trim();
@@ -194,7 +203,23 @@ async function saveUsername() {
         return;
     }
     
+    // Check cooldown if changing
+    if (isChanging) {
+        const now = Date.now();
+        const cooldown = 5 * 60 * 1000; // 5 minutes
+        const timeSinceLastChange = now - parseInt(lastUsernameChange);
+        
+        if (timeSinceLastChange < cooldown) {
+            const minutesLeft = Math.ceil((cooldown - timeSinceLastChange) / 60000);
+            errorDiv.textContent = `Wait ${minutesLeft} more minute${minutesLeft !== 1 ? 's' : ''} before changing again`;
+            errorDiv.style.display = 'block';
+            return;
+        }
+    }
+    
     const lowerUsername = username.toLowerCase();
+    
+    // Check banned list (case insensitive)
     for (const banned of BANNED_USERNAMES) {
         if (lowerUsername === banned.toLowerCase()) {
             errorDiv.textContent = 'This username is reserved';
@@ -203,6 +228,7 @@ async function saveUsername() {
         }
     }
     
+    // Check profanity
     for (const word of PROFANITY_LIST) {
         if (lowerUsername.includes(word)) {
             errorDiv.textContent = 'Username contains inappropriate language';
@@ -211,11 +237,10 @@ async function saveUsername() {
         }
     }
     
-    // Check if username taken
+    // Check if username taken by someone else
     try {
         const existing = await db.collection('usernames').where('username', '==', username).get();
         if (!existing.empty) {
-            // Make sure it's not the current user
             const doc = existing.docs[0];
             if (doc.id !== currentUser.uid) {
                 errorDiv.textContent = 'Username already taken';
@@ -224,16 +249,27 @@ async function saveUsername() {
             }
         }
         
+        // If changing, delete old username doc first to free it up
+        if (isChanging && currentUsername) {
+            await db.collection('usernames').doc(currentUser.uid).delete();
+        }
+        
         await db.collection('usernames').doc(currentUser.uid).set({
             username: username,
             email: currentUser.email,
-            createdAt: new Date()
+            updatedAt: new Date()
         });
         
         currentUsername = username;
+        lastUsernameChange = Date.now();
+        localStorage.setItem('last_username_change', lastUsernameChange);
+        
         closeUsernameModal();
-        showToast('Welcome, ' + username + '!');
+        showToast(isChanging ? 'Username updated!' : 'Welcome, ' + username + '!');
         updateAuthUI();
+        
+        // Update all past comments and ratings to new username
+        await updateUsernameOnPastContent(username);
     } catch (err) {
         errorDiv.textContent = 'Error saving username. Try again.';
         errorDiv.style.display = 'block';
@@ -241,8 +277,41 @@ async function saveUsername() {
     }
 }
 
+async function updateUsernameOnPastContent(newUsername) {
+    if (!currentUser) return;
+    
+    try {
+        // Update ratings
+        const ratingsSnapshot = await db.collection('ratings')
+            .where('userId', '==', currentUser.uid)
+            .get();
+        
+        const ratingUpdates = ratingsSnapshot.docs.map(doc => 
+            db.collection('ratings').doc(doc.id).update({ username: newUsername })
+        );
+        
+        // Update comments
+        const commentsSnapshot = await db.collection('comments')
+            .where('userId', '==', currentUser.uid)
+            .get();
+        
+        const commentUpdates = commentsSnapshot.docs.map(doc => 
+            db.collection('comments').doc(doc.id).update({ username: newUsername })
+        );
+        
+        await Promise.all([...ratingUpdates, ...commentUpdates]);
+    } catch (err) {
+        console.error('Update past content error:', err);
+    }
+}
+
 function closeUsernameModal() {
     const modal = document.getElementById('username-modal');
+    if (modal) modal.remove();
+}
+
+function closeChangeUsernameModal() {
+    const modal = document.getElementById('change-username-modal');
     if (modal) modal.remove();
 }
 
@@ -256,7 +325,7 @@ async function ensureUsername() {
     if (!currentUsername) {
         await loadUsername();
         if (!currentUsername) {
-            showUsernameModal();
+            showUsernameModal(false);
             return false;
         }
     }
@@ -275,11 +344,15 @@ function updateAuthUI() {
         const displayName = currentUsername || currentUser.email?.split('@')[0] || 'User';
         authContainer.innerHTML = `
             <span style="color:#a0a0a0; font-size:0.85rem;">${displayName}</span>
+            <button id="change-username-btn" class="btn btn-primary" style="padding:0.4rem 0.8rem; font-size:0.8rem;">Edit Name</button>
             <button id="logout-btn" class="btn btn-danger" style="padding:0.4rem 0.8rem; font-size:0.8rem;">Logout</button>
         `;
         setTimeout(() => {
             const btn = document.getElementById('logout-btn');
             if (btn) btn.addEventListener('click', logout);
+            
+            const changeBtn = document.getElementById('change-username-btn');
+            if (changeBtn) changeBtn.addEventListener('click', () => showUsernameModal(true));
         }, 0);
     } else {
         authContainer.innerHTML = `
@@ -349,7 +422,7 @@ function loginWithGoogle() {
             closeLoginModal();
             const doc = await db.collection('usernames').doc(result.user.uid).get();
             if (!doc.exists) {
-                showUsernameModal();
+                showUsernameModal(false);
             } else {
                 currentUsername = doc.data().username;
                 showToast('Signed in as ' + currentUsername);
@@ -375,7 +448,7 @@ function loginWithEmail() {
             closeLoginModal();
             const doc = await db.collection('usernames').doc(result.user.uid).get();
             if (!doc.exists) {
-                showUsernameModal();
+                showUsernameModal(false);
             } else {
                 currentUsername = doc.data().username;
                 showToast('Signed in as ' + currentUsername);
@@ -404,7 +477,7 @@ function signupWithEmail() {
     auth.createUserWithEmailAndPassword(email, password)
         .then(() => {
             closeLoginModal();
-            showUsernameModal();
+            showUsernameModal(false);
         })
         .catch(err => {
             showToast('Sign up failed: ' + err.message);
@@ -472,10 +545,13 @@ function saveList(key, list) {
 
 function getPageKey() {
     const path = window.location.pathname;
-    if (path.includes('anime.html')) return { key: ANIME_KEY, type: 'anime', defaultStatus: 'Plan to Watch' };
-    if (path.includes('manga.html')) return { key: MANGA_KEY, type: 'manga', defaultStatus: 'Plan to Read' };
-    if (path.includes('tv.html')) return { key: TV_KEY, type: 'tv', defaultStatus: 'Plan to Watch' };
-    if (path.includes('movies.html')) return { key: MOVIES_KEY, type: 'movies', defaultStatus: 'Plan to Watch' };
+    // Handle GitHub Pages paths with repo name
+    const pageName = path.split('/').pop() || path.split('/').slice(-2)[0];
+    
+    if (pageName === 'anime.html' || path.includes('/anime.html')) return { key: ANIME_KEY, type: 'anime', defaultStatus: 'Plan to Watch' };
+    if (pageName === 'manga.html' || path.includes('/manga.html')) return { key: MANGA_KEY, type: 'manga', defaultStatus: 'Plan to Read' };
+    if (pageName === 'tv.html' || path.includes('/tv.html')) return { key: TV_KEY, type: 'tv', defaultStatus: 'Plan to Watch' };
+    if (pageName === 'movies.html' || path.includes('/movies.html')) return { key: MOVIES_KEY, type: 'movies', defaultStatus: 'Plan to Watch' };
     return null;
 }
 
@@ -1031,26 +1107,28 @@ function setupSearch() {
     
     const setActive = (type, placeholder) => {
         currentSearchType = type;
-        [btnAnime, btnManga, btnTv, btnMovies].forEach(b => b.classList.remove('active'));
+        [btnAnime, btnManga, btnTv, btnMovies].forEach(b => b && b.classList.remove('active'));
         
-        if (type === 'anime') btnAnime.classList.add('active');
-        if (type === 'manga') btnManga.classList.add('active');
-        if (type === 'tv') btnTv.classList.add('active');
-        if (type === 'movies') btnMovies.classList.add('active');
+        if (type === 'anime' && btnAnime) btnAnime.classList.add('active');
+        if (type === 'manga' && btnManga) btnManga.classList.add('active');
+        if (type === 'tv' && btnTv) btnTv.classList.add('active');
+        if (type === 'movies' && btnMovies) btnMovies.classList.add('active');
         
-        searchInput.placeholder = placeholder;
+        if (searchInput) searchInput.placeholder = placeholder;
     };
     
-    btnAnime.addEventListener('click', () => setActive('anime', 'Search for anime...'));
-    btnManga.addEventListener('click', () => setActive('manga', 'Search for manga...'));
-    btnTv.addEventListener('click', () => setActive('tv', 'Search for TV show...'));
-    btnMovies.addEventListener('click', () => setActive('movies', 'Search for movie...'));
+    if (btnAnime) btnAnime.addEventListener('click', () => setActive('anime', 'Search for anime...'));
+    if (btnManga) btnManga.addEventListener('click', () => setActive('manga', 'Search for manga...'));
+    if (btnTv) btnTv.addEventListener('click', () => setActive('tv', 'Search for TV show...'));
+    if (btnMovies) btnMovies.addEventListener('click', () => setActive('movies', 'Search for movie...'));
     
     searchBtn.addEventListener('click', () => performSearch());
     
-    searchInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') performSearch();
-    });
+    if (searchInput) {
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') performSearch();
+        });
+    }
 }
 
 async function performSearch() {
@@ -1061,26 +1139,26 @@ async function performSearch() {
     const loading = document.getElementById('loading');
     const noResults = document.getElementById('no-results');
     
-    resultsContainer.innerHTML = '';
-    noResults.classList.add('hidden');
-    loading.classList.remove('hidden');
+    if (resultsContainer) resultsContainer.innerHTML = '';
+    if (noResults) noResults.classList.add('hidden');
+    if (loading) loading.classList.remove('hidden');
     
     if (currentSearchType === 'anime' || currentSearchType === 'manga') {
         try {
             const response = await fetch(`https://api.jikan.moe/v4/${currentSearchType}?q=${encodeURIComponent(query)}&limit=24`);
             const data = await response.json();
             
-            loading.classList.add('hidden');
+            if (loading) loading.classList.add('hidden');
             
             if (!data.data || data.data.length === 0) {
-                noResults.classList.remove('hidden');
+                if (noResults) noResults.classList.remove('hidden');
                 return;
             }
             
-            resultsContainer.innerHTML = data.data.map(item => createJikanCard(item)).join('');
+            if (resultsContainer) resultsContainer.innerHTML = data.data.map(item => createJikanCard(item)).join('');
             
         } catch (error) {
-            loading.classList.add('hidden');
+            if (loading) loading.classList.add('hidden');
             showToast('Search failed. Try again.');
             console.error(error);
         }
@@ -1091,17 +1169,17 @@ async function performSearch() {
             const response = await fetch(searchUrl);
             const data = await response.json();
             
-            loading.classList.add('hidden');
+            if (loading) loading.classList.add('hidden');
             
             if (data.Response === 'False' || !data.Search || data.Search.length === 0) {
                 showManualEntry(query, resultsContainer);
                 return;
             }
             
-            resultsContainer.innerHTML = data.Search.map(item => createOmdbCard(item)).join('');
+            if (resultsContainer) resultsContainer.innerHTML = data.Search.map(item => createOmdbCard(item)).join('');
             
         } catch (error) {
-            loading.classList.add('hidden');
+            if (loading) loading.classList.add('hidden');
             showManualEntry(query, resultsContainer);
         }
     }
@@ -1152,6 +1230,8 @@ function createOmdbCard(item) {
 
 function showManualEntry(query, container) {
     const manualId = Date.now();
+    if (!container) return;
+    
     container.innerHTML = `
         <div class="card">
             <img src="https://via.placeholder.com/200x280/2a2a2a/667eea?text=${encodeURIComponent(query)}" alt="${query}" class="card-image">
