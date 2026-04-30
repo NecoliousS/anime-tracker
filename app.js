@@ -26,7 +26,7 @@ const TV_KEY = 'tracker_tv';
 const MOVIES_KEY = 'tracker_movies';
 
 const BANNED_USERNAMES = ['Zer0H20', 'Nik0H20', 'Zer0', 'Nik0', 'niko', 'zero', 'H20'];
-const PROFANITY_LIST = ['fuck', 'shit', 'bitch', 'nigger', 'nigga', 'fag', 'retard'];
+const PROFANITY_LIST = ['fuck', 'shit', 'bitch', 'nigger', 'nigga', 'fag', 'retard', 'cunt', 'whore', 'slut', 'chink', 'kike', 'dyke', 'tranny', 'spic', 'wetback', 'coon', 'jigaboo', 'raghead', 'towelhead', 'cameljockey'];
 
 let currentUser = null;
 let currentUsername = null;
@@ -118,9 +118,13 @@ auth.onAuthStateChanged(async (user) => {
 
 async function loadUsername() {
     if (!currentUser) return;
-    const doc = await db.collection('usernames').doc(currentUser.uid).get();
-    if (doc.exists) {
-        currentUsername = doc.data().username;
+    try {
+        const doc = await db.collection('usernames').doc(currentUser.uid).get();
+        if (doc.exists) {
+            currentUsername = doc.data().username;
+        }
+    } catch (err) {
+        console.error('Load username error:', err);
     }
 }
 
@@ -133,12 +137,12 @@ function showUsernameModal() {
     
     const modal = document.createElement('div');
     modal.id = 'username-modal';
-    modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:2000; display:flex; align-items:center; justify-content:center;';
+    modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:2000; display:flex; align-items:center; justify-content:center;';
     
     modal.innerHTML = `
         <div style="background:#1a1a1a; border:1px solid #333; border-radius:12px; padding:2rem; max-width:400px; width:90%; text-align:center;">
             <h2 style="color:#fff; margin-bottom:0.5rem;">Choose Your Username</h2>
-            <p style="color:#666; margin-bottom:1.5rem;">This will be visible to other users</p>
+            <p style="color:#666; margin-bottom:1.5rem;">This will be visible to other users. You cannot change it later.</p>
             
             <input type="text" id="username-input" placeholder="Enter username..." maxlength="20" style="width:100%; padding:0.75rem; background:#0a0a0a; border:1px solid #333; border-radius:8px; color:#e0e0e0; margin-bottom:1rem; text-align:center;">
             
@@ -155,6 +159,15 @@ function showUsernameModal() {
     setTimeout(() => {
         const saveBtn = document.getElementById('save-username-btn');
         if (saveBtn) saveBtn.addEventListener('click', saveUsername);
+        
+        // Allow Enter key
+        const input = document.getElementById('username-input');
+        if (input) {
+            input.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') saveUsername();
+            });
+            input.focus();
+        }
     }, 0);
 }
 
@@ -171,6 +184,12 @@ async function saveUsername() {
     
     if (username.length < 3) {
         errorDiv.textContent = 'Username must be at least 3 characters';
+        errorDiv.style.display = 'block';
+        return;
+    }
+    
+    if (username.length > 20) {
+        errorDiv.textContent = 'Username must be 20 characters or less';
         errorDiv.style.display = 'block';
         return;
     }
@@ -192,27 +211,56 @@ async function saveUsername() {
         }
     }
     
-    const existing = await db.collection('usernames').where('username', '==', username).get();
-    if (!existing.empty) {
-        errorDiv.textContent = 'Username already taken';
+    // Check if username taken
+    try {
+        const existing = await db.collection('usernames').where('username', '==', username).get();
+        if (!existing.empty) {
+            // Make sure it's not the current user
+            const doc = existing.docs[0];
+            if (doc.id !== currentUser.uid) {
+                errorDiv.textContent = 'Username already taken';
+                errorDiv.style.display = 'block';
+                return;
+            }
+        }
+        
+        await db.collection('usernames').doc(currentUser.uid).set({
+            username: username,
+            email: currentUser.email,
+            createdAt: new Date()
+        });
+        
+        currentUsername = username;
+        closeUsernameModal();
+        showToast('Welcome, ' + username + '!');
+        updateAuthUI();
+    } catch (err) {
+        errorDiv.textContent = 'Error saving username. Try again.';
         errorDiv.style.display = 'block';
-        return;
+        console.error(err);
     }
-    
-    await db.collection('usernames').doc(currentUser.uid).set({
-        username: username,
-        email: currentUser.email,
-        createdAt: new Date()
-    });
-    
-    currentUsername = username;
-    closeUsernameModal();
-    showToast('Welcome, ' + username + '!');
 }
 
 function closeUsernameModal() {
     const modal = document.getElementById('username-modal');
     if (modal) modal.remove();
+}
+
+// Force username before community actions
+async function ensureUsername() {
+    if (!currentUser) {
+        showToast('Login required');
+        showLoginModal();
+        return false;
+    }
+    if (!currentUsername) {
+        await loadUsername();
+        if (!currentUsername) {
+            showUsernameModal();
+            return false;
+        }
+    }
+    return true;
 }
 
 // ============================================
@@ -303,7 +351,9 @@ function loginWithGoogle() {
             if (!doc.exists) {
                 showUsernameModal();
             } else {
-                showToast('Signed in as ' + doc.data().username);
+                currentUsername = doc.data().username;
+                showToast('Signed in as ' + currentUsername);
+                updateAuthUI();
             }
         })
         .catch(err => {
@@ -327,7 +377,9 @@ function loginWithEmail() {
             if (!doc.exists) {
                 showUsernameModal();
             } else {
-                showToast('Signed in as ' + doc.data().username);
+                currentUsername = doc.data().username;
+                showToast('Signed in as ' + currentUsername);
+                updateAuthUI();
             }
         })
         .catch(err => {
@@ -671,10 +723,8 @@ function setupStarRating() {
     const submitBtn = document.getElementById('submit-rating-btn');
     if (submitBtn) {
         submitBtn.addEventListener('click', async () => {
-            if (!currentUser) {
-                showToast('Login to rate');
-                return;
-            }
+            const hasUsername = await ensureUsername();
+            if (!hasUsername) return;
             if (selectedRating === 0) return;
             
             await submitRating(currentDetailItem.mal_id, currentDetailType, selectedRating);
@@ -686,19 +736,31 @@ async function loadCommunityData(malId, type) {
     if (appMode !== 'community') return;
     
     try {
-        // Load average rating
+        // Load all ratings for this item
         const ratingsSnapshot = await db.collection('ratings')
             .where('malId', '==', malId.toString())
             .where('type', '==', type)
             .get();
         
         if (!ratingsSnapshot.empty) {
-            let total = 0;
-            ratingsSnapshot.forEach(doc => total += doc.data().rating);
-            const avg = (total / ratingsSnapshot.size).toFixed(1);
+            // Count UNIQUE users (fixes old duplicate docs)
+            const userRatings = {};
+            ratingsSnapshot.forEach(doc => {
+                const data = doc.data();
+                // Keep the latest rating per user
+                const existing = userRatings[data.userId];
+                const currentTime = data.timestamp?.toMillis?.() || 0;
+                if (!existing || currentTime > existing.time) {
+                    userRatings[data.userId] = { rating: data.rating, time: currentTime };
+                }
+            });
+            
+            const uniqueCount = Object.keys(userRatings).length;
+            const total = Object.values(userRatings).reduce((sum, u) => sum + u.rating, 0);
+            const avg = uniqueCount > 0 ? (total / uniqueCount).toFixed(1) : '0.0';
             
             document.getElementById('community-score').textContent = avg;
-            document.getElementById('community-count').textContent = ratingsSnapshot.size + ' ratings';
+            document.getElementById('community-count').textContent = uniqueCount + ' rating' + (uniqueCount !== 1 ? 's' : '');
             
             // Update stars display
             const stars = '★'.repeat(Math.round(avg)) + '☆'.repeat(5 - Math.round(avg));
@@ -714,10 +776,21 @@ async function loadCommunityData(malId, type) {
                 .get();
             
             if (!userRatingSnap.empty) {
-                const existingRating = userRatingSnap.docs[0].data().rating;
+                // Get the latest one
+                let latestRating = 0;
+                let latestTime = 0;
+                userRatingSnap.forEach(doc => {
+                    const data = doc.data();
+                    const time = data.timestamp?.toMillis?.() || 0;
+                    if (time >= latestTime) {
+                        latestTime = time;
+                        latestRating = data.rating;
+                    }
+                });
+                
                 const stars = document.querySelectorAll('.star-input');
                 stars.forEach((s, index) => {
-                    if (index < existingRating) s.classList.add('active');
+                    if (index < latestRating) s.classList.add('active');
                     else s.classList.remove('active');
                 });
                 const submitBtn = document.getElementById('submit-rating-btn');
@@ -743,9 +816,19 @@ async function submitRating(malId, type, rating) {
             .get();
         
         if (!existing.empty) {
-            // Update existing rating
-            const docId = existing.docs[0].id;
-            await db.collection('ratings').doc(docId).update({
+            // Update existing rating (latest one)
+            let latestDoc = existing.docs[0];
+            let latestTime = existing.docs[0].data().timestamp?.toMillis?.() || 0;
+            
+            existing.forEach(doc => {
+                const time = doc.data().timestamp?.toMillis?.() || 0;
+                if (time > latestTime) {
+                    latestTime = time;
+                    latestDoc = doc;
+                }
+            });
+            
+            await db.collection('ratings').doc(latestDoc.id).update({
                 rating: rating,
                 username: currentUsername,
                 timestamp: firebase.firestore.FieldValue.serverTimestamp()
@@ -783,7 +866,15 @@ async function loadRecommendations(type, malId) {
     
     if (type === 'anime' || type === 'manga') {
         try {
-            const response = await fetch(`https://api.jikan.moe/v4/${type}/${malId}/recommendations`);
+            // Add timeout for slow API
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+            
+            const response = await fetch(`https://api.jikan.moe/v4/${type}/${malId}/recommendations`, {
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            
             const data = await response.json();
             
             if (!data.data || data.data.length === 0) {
@@ -813,7 +904,6 @@ async function loadRecommendations(type, malId) {
             recList.innerHTML = '<p style="color:#666;">Recommendations unavailable</p>';
         }
     } else {
-        // For TV/Movies - no easy recommendation API
         recList.innerHTML = '<p style="color:#666;">Recommendations available for Anime & Manga only</p>';
     }
 }
@@ -825,7 +915,6 @@ async function loadDetailComments(malId, type) {
     list.innerHTML = '<p style="color:#666;">Loading comments...</p>';
     
     try {
-        // Removed orderBy to avoid Firestore composite index requirement
         const snapshot = await db.collection('comments')
             .where('malId', '==', malId.toString())
             .where('type', '==', type)
@@ -866,11 +955,8 @@ async function loadDetailComments(malId, type) {
 }
 
 async function postDetailComment(malId, type) {
-    if (!currentUser) {
-        showToast('Please login to comment');
-        showLoginModal();
-        return;
-    }
+    const hasUsername = await ensureUsername();
+    if (!hasUsername) return;
     
     const input = document.getElementById('detail-comment-input');
     const text = input.value.trim();
@@ -882,7 +968,7 @@ async function postDetailComment(malId, type) {
             type: type,
             text: text,
             userId: currentUser.uid,
-            username: currentUsername || currentUser.email,
+            username: currentUsername,
             timestamp: firebase.firestore.FieldValue.serverTimestamp()
         });
         
