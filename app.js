@@ -35,6 +35,16 @@ let currentDetailItem = null;
 let currentDetailType = null;
 
 // ============================================
+// UTILS
+// ============================================
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// ============================================
 // MODE TOGGLE
 // ============================================
 
@@ -668,7 +678,6 @@ function setupStarRating() {
             if (selectedRating === 0) return;
             
             await submitRating(currentDetailItem.mal_id, currentDetailType, selectedRating);
-            document.getElementById('submit-rating-btn').style.display = 'none';
         });
     }
 }
@@ -676,8 +685,8 @@ function setupStarRating() {
 async function loadCommunityData(malId, type) {
     if (appMode !== 'community') return;
     
-    // Load average rating
     try {
+        // Load average rating
         const ratingsSnapshot = await db.collection('ratings')
             .where('malId', '==', malId.toString())
             .where('type', '==', type)
@@ -696,6 +705,27 @@ async function loadCommunityData(malId, type) {
             document.getElementById('community-stars').textContent = stars;
         }
         
+        // Load current user's existing rating to show on stars
+        if (currentUser) {
+            const userRatingSnap = await db.collection('ratings')
+                .where('userId', '==', currentUser.uid)
+                .where('malId', '==', malId.toString())
+                .where('type', '==', type)
+                .get();
+            
+            if (!userRatingSnap.empty) {
+                const existingRating = userRatingSnap.docs[0].data().rating;
+                const stars = document.querySelectorAll('.star-input');
+                stars.forEach((s, index) => {
+                    if (index < existingRating) s.classList.add('active');
+                    else s.classList.remove('active');
+                });
+                const submitBtn = document.getElementById('submit-rating-btn');
+                submitBtn.textContent = 'Update Rating';
+                submitBtn.style.display = 'block';
+            }
+        }
+        
         // Load comments
         await loadDetailComments(malId, type);
     } catch (err) {
@@ -705,53 +735,86 @@ async function loadCommunityData(malId, type) {
 
 async function submitRating(malId, type, rating) {
     try {
-        await db.collection('ratings').add({
-            malId: malId.toString(),
-            type: type,
-            rating: rating,
-            userId: currentUser.uid,
-            username: currentUsername,
-            timestamp: firebase.firestore.FieldValue.serverTimestamp()
-        });
+        // Check if user already rated this item
+        const existing = await db.collection('ratings')
+            .where('userId', '==', currentUser.uid)
+            .where('malId', '==', malId.toString())
+            .where('type', '==', type)
+            .get();
         
-        showToast('Rating submitted!');
+        if (!existing.empty) {
+            // Update existing rating
+            const docId = existing.docs[0].id;
+            await db.collection('ratings').doc(docId).update({
+                rating: rating,
+                username: currentUsername,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            showToast('Rating updated!');
+        } else {
+            // Add new rating
+            await db.collection('ratings').add({
+                malId: malId.toString(),
+                type: type,
+                rating: rating,
+                userId: currentUser.uid,
+                username: currentUsername,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            showToast('Rating submitted!');
+        }
+        
         await loadCommunityData(malId, type);
         
         // Show recommendations
         document.getElementById('recommendations').style.display = 'block';
-        loadRecommendations(type, rating);
+        loadRecommendations(type, malId);
     } catch (err) {
         showToast('Failed to submit rating');
+        console.error(err);
     }
 }
 
-async function loadRecommendations(type, userRating) {
+async function loadRecommendations(type, malId) {
     const recList = document.getElementById('rec-list');
     if (!recList) return;
     
-    // Simple recommendation: same type, highly rated by others
-    try {
-        const snapshot = await db.collection('ratings')
-            .where('type', '==', type)
-            .orderBy('rating', 'desc')
-            .limit(3)
-            .get();
-        
-        if (snapshot.empty) {
-            recList.innerHTML = '<p style="color:#666;">No recommendations yet</p>';
-            return;
+    recList.innerHTML = '<p style="color:#666;">Loading recommendations...</p>';
+    
+    if (type === 'anime' || type === 'manga') {
+        try {
+            const response = await fetch(`https://api.jikan.moe/v4/${type}/${malId}/recommendations`);
+            const data = await response.json();
+            
+            if (!data.data || data.data.length === 0) {
+                recList.innerHTML = '<p style="color:#666;">No recommendations available</p>';
+                return;
+            }
+            
+            // Show top 4 recommendations
+            const recs = data.data.slice(0, 4);
+            
+            recList.innerHTML = recs.map(rec => {
+                const entry = rec.entry;
+                return `
+                    <div class="card" style="cursor:pointer;" onclick="window.open('${entry.url}', '_blank')">
+                        <img src="${entry.images?.jpg?.image_url || 'https://via.placeholder.com/200x280/2a2a2a/667eea?text=No+Image'}" alt="${entry.title}" class="card-image" style="height:200px;">
+                        <div class="card-body">
+                            <div class="card-title">${entry.title}</div>
+                            <div class="card-meta">
+                                <span class="score-display">Recommended</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        } catch (err) {
+            console.error('Recommendations error:', err);
+            recList.innerHTML = '<p style="color:#666;">Recommendations unavailable</p>';
         }
-        
-        // Get unique malIds
-        const malIds = [...new Set(snapshot.docs.map(d => d.data().malId))];
-        
-        recList.innerHTML = malIds.map(id => `
-            <div style="background:#0a0a0a; border:1px solid #333; border-radius:8px; padding:1rem;">
-                <p style="color:#667eea;">Recommended ID: ${id}</p>
-            </div>
-        `).join('');
-    } catch (err) {
-        recList.innerHTML = '<p style="color:#666;">Recommendations unavailable</p>';
+    } else {
+        // For TV/Movies - no easy recommendation API
+        recList.innerHTML = '<p style="color:#666;">Recommendations available for Anime & Manga only</p>';
     }
 }
 
@@ -762,10 +825,10 @@ async function loadDetailComments(malId, type) {
     list.innerHTML = '<p style="color:#666;">Loading comments...</p>';
     
     try {
+        // Removed orderBy to avoid Firestore composite index requirement
         const snapshot = await db.collection('comments')
             .where('malId', '==', malId.toString())
             .where('type', '==', type)
-            .orderBy('timestamp', 'desc')
             .get();
         
         if (snapshot.empty) {
@@ -773,22 +836,31 @@ async function loadDetailComments(malId, type) {
             return;
         }
         
-        list.innerHTML = snapshot.docs.map(doc => {
-            const data = doc.data();
+        // Sort client-side by timestamp (newest first)
+        const comments = snapshot.docs
+            .map(doc => ({ id: doc.id, ...doc.data() }))
+            .sort((a, b) => {
+                const timeA = a.timestamp?.toMillis?.() || 0;
+                const timeB = b.timestamp?.toMillis?.() || 0;
+                return timeB - timeA;
+            });
+        
+        list.innerHTML = comments.map(data => {
             return `
                 <div class="comment">
                     <div class="comment-header">
-                        <span class="comment-author">${data.username || 'Anonymous'}</span>
-                        <span class="comment-time">${data.timestamp?.toDate().toLocaleDateString() || ''}</span>
+                        <span class="comment-author">${escapeHtml(data.username || 'Anonymous')}</span>
+                        <span class="comment-time">${data.timestamp?.toDate?.().toLocaleDateString() || ''}</span>
                     </div>
-                    <p class="comment-text">${data.text}</p>
+                    <p class="comment-text">${escapeHtml(data.text)}</p>
                     <div class="comment-actions">
-                        <button onclick="replyToComment('${doc.id}')">Reply</button>
+                        <button onclick="replyToComment('${data.id}')">Reply</button>
                     </div>
                 </div>
             `;
         }).join('');
     } catch (err) {
+        console.error('Comment load error:', err);
         list.innerHTML = '<p style="color:#666;">Error loading comments</p>';
     }
 }
@@ -818,6 +890,7 @@ async function postDetailComment(malId, type) {
         await loadDetailComments(malId, type);
     } catch (err) {
         showToast('Failed to post comment');
+        console.error(err);
     }
 }
 
