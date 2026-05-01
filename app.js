@@ -941,8 +941,7 @@ async function openDetailModal(malId, type) {
                     </div>
                     
                     <div id="recommendations" class="recommendations" style="display:none;">
-                        <h3>Because you rated this, you might like:</h3>
-                        <div id="rec-list" class="list-grid"></div>
+                        <!-- Dropdown injected by loadRecommendations -->
                     </div>
                     
                     <div class="comments-section">
@@ -995,6 +994,129 @@ function closeDetailModal() {
     currentDetailItem = null;
     currentDetailType = null;
     replyingToCommentId = null;
+}
+
+// ============================================
+// RECOMMENDATION DROPDOWN TOGGLE
+// ============================================
+
+function toggleRecDropdown() {
+    const content = document.getElementById('rec-dropdown-content');
+    const chevron = document.querySelector('.rec-chevron');
+    if (!content) return;
+
+    const isOpen = content.style.maxHeight && content.style.maxHeight !== '0px';
+
+    if (isOpen) {
+        content.style.maxHeight = '0px';
+        content.style.opacity = '0';
+        if (chevron) chevron.style.transform = 'rotate(0deg)';
+    } else {
+        content.style.maxHeight = '800px';
+        content.style.opacity = '1';
+        if (chevron) chevron.style.transform = 'rotate(180deg)';
+    }
+}
+
+// ============================================
+// EXTERNAL DETAIL MODAL (for recommendations)
+// ============================================
+
+async function openDetailModalExternal(malId, type) {
+    closeDetailModal();
+
+    currentDetailType = type;
+
+    const modal = document.createElement('div');
+    modal.id = 'detail-modal';
+    modal.className = 'detail-modal';
+
+    modal.innerHTML = `
+        <div class="detail-content">
+            <button class="close-detail" onclick="closeDetailModal()">×</button>
+
+            <div class="detail-left">
+                <div id="external-image-placeholder" style="width:100%; height:420px; background:#2a2a2a; border-radius:12px; display:flex; align-items:center; justify-content:center; color:#667eea; font-weight:600;">
+                    Loading...
+                </div>
+                <button id="external-add-btn" class="btn btn-add" style="width:100%; margin-top:1rem;">+ Add to My List</button>
+            </div>
+
+            <div class="detail-right">
+                <h2 id="external-title" style="color:#fff;">Loading...</h2>
+                <div class="detail-meta-info" id="external-meta"></div>
+                <div id="external-synopsis" style="color:#a0a0a0; line-height:1.6; margin-top:1rem;"></div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const response = await fetch(`https://api.jikan.moe/v4/${type}/${malId}`, {
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        const { data } = await response.json();
+
+        currentDetailItem = {
+            mal_id: data.mal_id,
+            title: data.title || data.title_english || 'Unknown Title',
+            image_url: data.images?.jpg?.image_url || '',
+            status: type === 'manga' ? 'Plan to Read' : 'Plan to Watch',
+            score: null
+        };
+
+        const placeholder = document.getElementById('external-image-placeholder');
+        if (placeholder) {
+            placeholder.outerHTML = `
+                <img src="${currentDetailItem.image_url}" alt="${escapeHtml(currentDetailItem.title)}" class="detail-image-large" onerror="this.src='https://via.placeholder.com/300x420/2a2a2a/667eea?text=${encodeURIComponent(currentDetailItem.title)}'">
+            `;
+        }
+
+        document.getElementById('external-title').textContent = currentDetailItem.title;
+
+        const meta = document.getElementById('external-meta');
+        meta.innerHTML = `
+            <span class="status-badge status-plan">${type === 'manga' ? 'Plan to Read' : 'Plan to Watch'}</span>
+            <span>Score: ${data.score || 'N/A'}</span>
+            <span>${data.type || type}</span>
+            ${data.episodes ? `<span>${data.episodes} eps</span>` : ''}
+            ${data.chapters ? `<span>${data.chapters} ch</span>` : ''}
+            ${data.volumes ? `<span>${data.volumes} vols</span>` : ''}
+        `;
+
+        document.getElementById('external-synopsis').textContent = data.synopsis || 'No synopsis available.';
+
+        const addBtn = document.getElementById('external-add-btn');
+        addBtn.addEventListener('click', () => {
+            let key;
+            if (type === 'anime') key = ANIME_KEY;
+            else if (type === 'manga') key = MANGA_KEY;
+            else if (type === 'tv') key = TV_KEY;
+            else key = MOVIES_KEY;
+
+            const added = addToList(key, currentDetailItem);
+            if (added) {
+                addBtn.textContent = '✓ Added';
+                addBtn.disabled = true;
+                addBtn.style.opacity = '0.6';
+                addBtn.style.cursor = 'default';
+            }
+        });
+
+    } catch (err) {
+        console.error('External detail error:', err);
+        document.getElementById('external-title').textContent = 'Error Loading Details';
+        document.getElementById('external-synopsis').textContent = 'Could not load details for this item.';
+    }
+
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeDetailModal();
+    });
 }
 
 function updateDetailModal() {
@@ -1143,59 +1265,104 @@ async function submitRating(malId, type, rating) {
         }
 
         await loadCommunityData(malId, type);
-        document.getElementById('recommendations').style.display = 'block';
-        loadRecommendations(type, malId);
+        await loadRecommendations(type, malId, rating);
     } catch (err) {
         showToast('Failed to submit rating');
         console.error(err);
     }
 }
 
-async function loadRecommendations(type, malId) {
-    const recList = document.getElementById('rec-list');
-    if (!recList) return;
-    
-    recList.innerHTML = '<p style="color:#666;">Loading recommendations...</p>';
-    
-    if (type === 'anime' || type === 'manga') {
-        try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 5000);
+async function loadRecommendations(type, malId, userRating = 3) {
+    const recSection = document.getElementById('recommendations');
+    if (!recSection) return;
 
+    recSection.style.display = 'block';
+
+    const isLowRating = userRating <= 2;
+    const headerText = isLowRating
+        ? "If you didn't like that one, you may like:"
+        : "Because you rated this, you might like:";
+
+    recSection.innerHTML = `
+        <button class="rec-toggle-btn" onclick="toggleRecDropdown()" style="width:100%; padding:0.75rem 1rem; background:#0a0a0a; border:1px solid #333; border-radius:8px; color:#e0e0e0; cursor:pointer; display:flex; justify-content:space-between; align-items:center; font-size:1rem; font-weight:600; transition:all 0.3s;">
+            <span>${headerText}</span>
+            <span class="rec-chevron" style="transition:transform 0.3s; display:inline-block;">▼</span>
+        </button>
+        <div class="rec-dropdown-content" id="rec-dropdown-content" style="max-height:0; overflow:hidden; opacity:0; transition:max-height 0.4s ease, opacity 0.3s ease; margin-top:1rem;">
+            <div id="rec-list" class="list-grid"></div>
+        </div>
+    `;
+
+    const list = document.getElementById('rec-list');
+    list.innerHTML = '<p style="color:#666;">Loading recommendations...</p>';
+
+    // Auto-expand on first load so they see it, then they can collapse at will
+    setTimeout(() => toggleRecDropdown(), 100);
+
+    if (type !== 'anime' && type !== 'manga') {
+        list.innerHTML = '<p style="color:#666;">Recommendations available for Anime &amp; Manga only</p>';
+        return;
+    }
+
+    try {
+        let recs = [];
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+        if (isLowRating) {
+            // Fetch popular/top items for "different" suggestions
+            const response = await fetch(`https://api.jikan.moe/v4/top/${type}?limit=12`, {
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            const data = await response.json();
+
+            if (data.data) {
+                // Shuffle and take 4, excluding current item
+                recs = data.data
+                    .filter(item => item.mal_id !== parseInt(malId))
+                    .sort(() => 0.5 - Math.random())
+                    .slice(0, 4);
+            }
+        } else {
+            // Fetch similar recommendations
             const response = await fetch(`https://api.jikan.moe/v4/${type}/${malId}/recommendations`, {
                 signal: controller.signal
             });
             clearTimeout(timeoutId);
-
             const data = await response.json();
 
-            if (!data.data || data.data.length === 0) {
-                recList.innerHTML = '<p style="color:#666;">No recommendations available</p>';
-                return;
+            if (data.data) {
+                recs = data.data.slice(0, 4).map(rec => rec.entry);
             }
+        }
 
-            const recs = data.data.slice(0, 4);
+        if (recs.length === 0) {
+            list.innerHTML = '<p style="color:#666;">No recommendations available</p>';
+            return;
+        }
 
-            recList.innerHTML = recs.map(rec => {
-                const entry = rec.entry;
-                return `
-                    <div class="card" style="cursor:pointer;" onclick="window.open('${entry.url}', '_blank')">
-                        <img src="${entry.images?.jpg?.image_url || 'https://via.placeholder.com/200x280/2a2a2a/667eea?text=No+Image'}" alt="${entry.title}" class="card-image" style="height:200px;">
-                        <div class="card-body">
-                            <div class="card-title">${entry.title}</div>
-                            <div class="card-meta">
-                                <span class="score-display">Recommended</span>
-                            </div>
+        list.innerHTML = recs.map(item => {
+            const id = item.mal_id;
+            const title = escapeHtml(item.title);
+            const image = item.images?.jpg?.image_url || `https://via.placeholder.com/200x280/2a2a2a/667eea?text=${encodeURIComponent(title)}`;
+
+            return `
+                <div class="card rec-card" style="cursor:pointer;" onclick="openDetailModalExternal(${id}, '${type}')">
+                    <img src="${image}" alt="${title}" class="card-image" style="height:200px;" onerror="this.src='https://via.placeholder.com/200x280/2a2a2a/667eea?text=${encodeURIComponent(title)}'">
+                    <div class="card-body">
+                        <div class="card-title">${title}</div>
+                        <div class="card-meta">
+                            <span class="score-display">${isLowRating ? 'Popular Pick' : 'Recommended'}</span>
                         </div>
                     </div>
-                `;
-            }).join('');
-        } catch (err) {
-            console.error('Recommendations error:', err);
-            recList.innerHTML = '<p style="color:#666;">Recommendations unavailable</p>';
-        }
-    } else {
-        recList.innerHTML = '<p style="color:#666;">Recommendations available for Anime & Manga only</p>';
+                </div>
+            `;
+        }).join('');
+
+    } catch (err) {
+        console.error('Recommendations error:', err);
+        list.innerHTML = '<p style="color:#666;">Recommendations unavailable</p>';
     }
 }
 
