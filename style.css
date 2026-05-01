@@ -835,3 +835,43 @@ body {
         grid-template-columns: 1fr;
     }
 }
+
+/* ============================================
+   RECOMMENDATION DROPDOWN
+   ============================================ */
+
+.rec-toggle-btn {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background: #0a0a0a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    color: #e0e0e0;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 1rem;
+    font-weight: 600;
+    transition: all 0.3s;
+}
+
+.rec-toggle-btn:hover {
+    border-color: #667eea;
+}
+
+.rec-dropdown-content {
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    transition: max-height 0.4s ease, opacity 0.3s ease;
+    margin-top: 0;
+}
+
+.rec-card {
+    cursor: pointer;
+}
+
+.rec-card:hover {
+    border-color: #10b981;
+}
