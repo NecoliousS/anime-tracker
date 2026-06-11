@@ -50,7 +50,6 @@ function escapeHtml(text) {
 }
 
 function isValidEmail(email) {
-    // Basic regex for real email format
     const re = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
     return re.test(email);
 }
@@ -246,28 +245,30 @@ async function saveUsername(isChanging = false) {
     }
 
     try {
-        // Case-insensitive duplicate check
-        const allUsers = await db.collection('usernames').get();
+        // Case-insensitive duplicate check with null safety
+        const existing = await db.collection('usernames').get();
         let taken = false;
-        allUsers.forEach(doc => {
-            if (doc.id !== currentUser.uid && doc.data().username.toLowerCase() === lowerUsername) {
+        
+        existing.forEach(doc => {
+            if (doc.id === currentUser.uid) return;
+            
+            const data = doc.data();
+            if (data && data.username && data.username.toLowerCase() === lowerUsername) {
                 taken = true;
             }
         });
+
         if (taken) {
             errorDiv.textContent = 'Username already taken';
             errorDiv.style.display = 'block';
             return;
         }
 
-        if (isChanging && currentUsername) {
-            await db.collection('usernames').doc(currentUser.uid).delete();
-        }
-
+        // Update existing doc (no delete + recreate)
         await db.collection('usernames').doc(currentUser.uid).set({
             username: username,
             email: currentUser.email,
-            updatedAt: new Date()
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         });
 
         currentUsername = username;
@@ -281,7 +282,7 @@ async function saveUsername(isChanging = false) {
     } catch (err) {
         errorDiv.textContent = 'Error saving username. Try again.';
         errorDiv.style.display = 'block';
-        console.error(err);
+        console.error('saveUsername error:', err);
     }
 }
 
@@ -504,7 +505,6 @@ function signupWithEmail() {
 
     auth.createUserWithEmailAndPassword(email, password)
         .then(async (result) => {
-            // Send verification email
             try {
                 await result.user.sendEmailVerification();
                 showToast('Verification email sent! Check your inbox.');
@@ -574,13 +574,10 @@ function showPhoneLogin() {
         document.getElementById('send-code-btn').addEventListener('click', sendPhoneCode);
         document.getElementById('verify-code-btn').addEventListener('click', verifyPhoneCode);
 
-        // Setup invisible reCAPTCHA
         if (!recaptchaVerifier) {
             recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
                 size: 'invisible',
-                callback: (response) => {
-                    // reCAPTCHA solved
-                }
+                callback: (response) => {}
             });
         }
     }, 0);
@@ -608,7 +605,6 @@ function sendPhoneCode() {
         return;
     }
 
-    // Basic validation: must start with + and have digits
     if (!phoneNumber.match(/^\+[1-9]\d{1,14}$/)) {
         errorDiv.textContent = 'Enter valid number with country code (e.g. +15551234567)';
         errorDiv.style.display = 'block';
@@ -628,7 +624,6 @@ function sendPhoneCode() {
             errorDiv.textContent = 'Error: ' + err.message;
             errorDiv.style.display = 'block';
             console.error('Phone auth error:', err);
-            // Reset reCAPTCHA
             if (recaptchaVerifier) {
                 recaptchaVerifier.clear();
                 recaptchaVerifier = null;
@@ -734,7 +729,6 @@ function loadList(key) {
 
 function saveList(key, list) {
     localStorage.setItem(key, JSON.stringify(list));
-    // ALWAYS sync to Firestore immediately
     saveUserData();
 }
 
@@ -945,7 +939,6 @@ async function openDetailModal(malId, type) {
                     </div>
                     
                     <div id="recommendations" class="recommendations" style="display:none;">
-                        <!-- Dropdown injected by loadRecommendations -->
                     </div>
                     
                     <div class="comments-section">
@@ -1300,7 +1293,6 @@ async function loadRecommendations(type, malId, userRating = 3) {
     const list = document.getElementById('rec-list');
     list.innerHTML = '<p style="color:#666;">Loading recommendations...</p>';
 
-    // Auto-expand on first load so they see it, then they can collapse at will
     setTimeout(() => toggleRecDropdown(), 100);
 
     if (type !== 'anime' && type !== 'manga') {
@@ -1314,7 +1306,6 @@ async function loadRecommendations(type, malId, userRating = 3) {
         const timeoutId = setTimeout(() => controller.abort(), 5000);
 
         if (isLowRating) {
-            // Fetch popular/top items for "different" suggestions
             const response = await fetch(`https://api.jikan.moe/v4/top/${type}?limit=12`, {
                 signal: controller.signal
             });
@@ -1322,14 +1313,12 @@ async function loadRecommendations(type, malId, userRating = 3) {
             const data = await response.json();
 
             if (data.data) {
-                // Shuffle and take 4, excluding current item
                 recs = data.data
                     .filter(item => item.mal_id !== parseInt(malId))
                     .sort(() => 0.5 - Math.random())
                     .slice(0, 4);
             }
         } else {
-            // Fetch similar recommendations
             const response = await fetch(`https://api.jikan.moe/v4/${type}/${malId}/recommendations`, {
                 signal: controller.signal
             });
